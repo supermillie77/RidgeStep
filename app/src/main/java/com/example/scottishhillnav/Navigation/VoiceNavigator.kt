@@ -1,0 +1,117 @@
+package com.example.scottishhillnav.navigation
+
+import android.content.Context
+import android.media.AudioAttributes
+import android.speech.tts.TextToSpeech
+import android.util.Log
+import java.util.Locale
+
+/**
+ * Wraps Android TextToSpeech and fires route instructions as the walker progresses.
+ *
+ * Usage:
+ *   1. Call setInstructions() when a route is built.
+ *   2. Call onProgressUpdate(metres) on every GPS location update.
+ *   3. Call shutdown() in Activity.onDestroy().
+ */
+class VoiceNavigator(context: Context) : TextToSpeech.OnInitListener {
+
+    companion object {
+        private const val TAG = "VoiceNavigator"
+    }
+
+    private val tts = TextToSpeech(context.applicationContext, this)
+    private var ready = false
+
+    /** Set to true to silence all announcements without clearing instructions. */
+    var muted: Boolean = false
+
+    private var instructions: List<RouteInstruction> = emptyList()
+
+    // Track which instruction distances have already been announced so each fires once only.
+    private val announced = mutableSetOf<Double>()
+
+    // ── TTS lifecycle ────────────────────────────────────────────────────────
+
+    override fun onInit(status: Int) {
+        if (status != TextToSpeech.SUCCESS) {
+            Log.w(TAG, "TTS init failed (status=$status)")
+            return
+        }
+        // Route audio through the media stream so it is not silenced by notification/ring mute.
+        tts.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+        )
+        // Prefer British English for Scottish hills — fall back to device locale
+        var result = tts.setLanguage(Locale.UK)
+        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            result = tts.setLanguage(Locale.ENGLISH)
+        }
+        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            result = tts.setLanguage(Locale.getDefault())
+        }
+        ready = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+        if (!ready) Log.w(TAG, "TTS language unavailable on this device")
+    }
+
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    fun setInstructions(list: List<RouteInstruction>) {
+        instructions = list
+        announced.clear()
+        tts.stop()
+    }
+
+    fun clearInstructions() {
+        instructions = emptyList()
+        announced.clear()
+        tts.stop()
+    }
+
+    /**
+     * Called on each GPS update. Fires any instruction whose trigger distance
+     * has just been passed (and hasn't been announced yet).
+     */
+    fun onProgressUpdate(progressMeters: Double) {
+        if (muted || !ready) return
+        for (inst in instructions) {
+            if (inst.distanceFromStart !in announced && progressMeters >= inst.distanceFromStart) {
+                announced.add(inst.distanceFromStart)
+                tts.speak(inst.text, TextToSpeech.QUEUE_ADD, null, "nav_${announced.size}")
+            }
+        }
+    }
+
+    /** Speak an arbitrary string immediately (interrupts any current speech). */
+    fun speakNow(text: String) {
+        if (!ready || muted) return
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "nav_immediate")
+    }
+
+    /**
+     * Pronounce a name on user request — always speaks even when navigation is muted.
+     * Returns true if TTS accepted the speech, false if TTS is unavailable.
+     */
+    fun pronounce(text: String): Boolean {
+        if (!ready) {
+            // Try to recover if onInit language setup failed
+            for (locale in listOf(Locale.UK, Locale.ENGLISH, Locale.getDefault())) {
+                val r = tts.setLanguage(locale)
+                if (r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED) {
+                    ready = true
+                    break
+                }
+            }
+        }
+        if (!ready) return false
+        return tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "pronounce") == TextToSpeech.SUCCESS
+    }
+
+    fun shutdown() {
+        tts.stop()
+        tts.shutdown()
+    }
+}

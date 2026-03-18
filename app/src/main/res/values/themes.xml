@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.YourApp" parent="Theme.Material3.DayNight.NoActionBar">
+
+        <!-- Material color hooks -->
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorSecondary">@color/colorSecondary</item>
+
+        <!-- Android 12+ splash -->
+        <item name="android:windowSplashScreenBackground">@color/storm_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/storm_background</item>
+
+    </style>
+
+</resources>

@@ -1,0 +1,26 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Large DEM elevation tiles — download separately from https://dwtkns.com/srtm30m/
+# Tiles needed: n56_w005_1arc_v3.tif, n56_w006_1arc_v3.tif
+*.tif
+*.hgt
+
+# Graph pack backups
+*.bin.bak
+
+# JVM crash logs
+hs_err_pid*.log

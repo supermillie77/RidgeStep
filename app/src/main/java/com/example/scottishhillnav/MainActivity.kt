@@ -1,0 +1,1858 @@
+// app/src/main/java/com/example/scottishhillnav/MainActivity.kt
+package com.example.scottishhillnav
+
+import android.Manifest
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.app.AlertDialog
+import android.app.Dialog
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.location.Location
+import android.net.Uri
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.app.Activity
+import android.speech.RecognizerIntent
+import android.text.Editable
+import android.text.TextWatcher
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ListView
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.coordinatorlayout.widget.CoordinatorLayout
+import androidx.core.app.ActivityCompat
+import com.example.scottishhillnav.hills.CarPark
+import com.example.scottishhillnav.hills.HillSearchService
+import com.example.scottishhillnav.hills.HillSuggestionService
+import com.example.scottishhillnav.navigation.ElevationProfileModel
+import com.example.scottishhillnav.navigation.InstructionGenerator
+import com.example.scottishhillnav.navigation.OsGridRef
+import com.example.scottishhillnav.navigation.RouteIndex
+import com.example.scottishhillnav.navigation.VoiceNavigator
+import com.example.scottishhillnav.routing.*
+import com.example.scottishhillnav.ui.ElevationProfileView
+import com.example.scottishhillnav.ui.RouteGradientOverlay
+import com.google.android.gms.location.*
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.floatingactionbutton.FloatingActionButton
+import org.osmdroid.config.Configuration
+import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
+import org.osmdroid.util.MapTileIndex
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.MapEventsOverlay
+import org.osmdroid.views.overlay.Marker
+import kotlin.math.asin
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var map: MapView
+    private lateinit var graph: Graph           // active drawing/navigation graph (may include Overpass data)
+    private lateinit var bundledGraph: Graph    // original bundled graph — never mutated, used for coverage checks
+    private lateinit var router: AStarRouter
+    private lateinit var metricsCalculator: RouteMetricsCalculator
+    private lateinit var candidateGenerator: RouteCandidateGenerator
+
+    // Ordered tap points: [start, (waypoint1, waypoint2, ...,) destination]
+    private val tapPoints   = mutableListOf<GeoPoint>()
+    private val tapMarkers  = mutableListOf<Marker>()
+
+    private val routeCandidates = mutableListOf<RouteCandidate>()
+    private var activeIndex = 0
+
+    private lateinit var routeOverlay: RouteGradientOverlay
+    private lateinit var routeSelectorRow: LinearLayout
+
+    // Bottom sheet UI
+    private lateinit var bottomSheetBehavior: BottomSheetBehavior<FrameLayout>
+    private lateinit var sheetTitle: TextView
+    private lateinit var sheetSubtitle: TextView
+    private lateinit var statDistance: TextView
+    private lateinit var statAscent: TextView
+    private lateinit var statTime: TextView
+    private lateinit var statTtd: TextView
+    private lateinit var statHeight: TextView
+    private lateinit var statSpeed: TextView
+    private lateinit var statGridRef: TextView
+
+    // GPS
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var lastLocation: Location? = null
+    private var progressMeters = 0.0
+
+    // Route navigation index
+    private var routeIndex: RouteIndex? = null
+    private var elevationProfile: ElevationProfileModel? = null
+
+    // Voice navigation
+    private lateinit var voiceNavigator: VoiceNavigator
+    private lateinit var instructionGenerator: InstructionGenerator
+    private lateinit var voiceFab: FloatingActionButton
+
+    // Off-track detection
+    private var offTrackCount         = 0          // consecutive GPS fixes showing off-route
+    private var lastOffTrackAnnounce  = 0L         // epoch-ms of last off-route announcement
+
+    // Hill/walk search voice input — holds the EditText that should receive spoken text
+    private var pendingVoiceTarget: EditText? = null
+
+    // Hill selection & road-navigation phase
+    private enum class NavPhase { IDLE, DRIVING_TO_CARPARK, HILL_NAV }
+    private var navPhase         = NavPhase.IDLE
+    private var selectedHill     : HillSearchService.HillResult? = null
+    private var selectedCarPark  : CarPark? = null
+    private lateinit var driveBanner: FrameLayout  // shown while driving to car park
+
+    private companion object {
+        const val OFF_TRACK_THRESHOLD_M  = 50.0    // metres before considered off route
+        const val OFF_TRACK_TRIGGER_FIXES = 3      // consecutive fixes before announcing
+        const val OFF_TRACK_REANNOUNCE_MS    = 30_000L
+        const val CARPARK_ARRIVAL_M          = 200.0
+        const val LOCATION_PERMISSION_REQUEST = 1001
+        const val SPEECH_REQUEST_CODE         = 2001
+        // Ben Nevis summit — used to decide whether curated routes apply
+        const val BEN_NEVIS_LAT = 56.7969
+        const val BEN_NEVIS_LON = -5.0035
+    }
+
+
+    // Live popup
+    private var statsDialog: Dialog? = null
+    private val popupHandler = Handler(Looper.getMainLooper())
+    private var popupUpdateRunnable: Runnable? = null
+
+    private val locationCallback = object : LocationCallback() {
+        override fun onLocationResult(result: LocationResult) {
+            val loc = result.lastLocation ?: return
+            lastLocation = loc
+            if (navPhase == NavPhase.DRIVING_TO_CARPARK) {
+                checkCarParkArrival(loc)
+            } else {
+                updateProgressFromLocation(loc)
+            }
+            updateLiveStatsInSheet()
+            updateStatsPopupIfOpen()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        Configuration.getInstance().apply {
+            load(this@MainActivity, getSharedPreferences("osm", MODE_PRIVATE))
+            userAgentValue = packageName
+            osmdroidTileCache = java.io.File(cacheDir, "osmdroid")
+        }
+
+        graph = GraphStore.load(this)
+        bundledGraph = graph   // keep permanent reference — never reassigned
+        router = AStarRouter(graph)
+        metricsCalculator = RouteMetricsCalculator(graph)
+        candidateGenerator = RouteCandidateGenerator(graph, router, metricsCalculator)
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        voiceNavigator = VoiceNavigator(this)
+        instructionGenerator = InstructionGenerator(graph)
+
+        val root = CoordinatorLayout(this).apply {
+            layoutParams = CoordinatorLayout.LayoutParams(
+                CoordinatorLayout.LayoutParams.MATCH_PARENT,
+                CoordinatorLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        // ── Map ──────────────────────────────────────────────────────────────
+        map = MapView(this).apply {
+            setMultiTouchControls(true)
+            setBuiltInZoomControls(true)
+            val key = "cc4acfb2bb5d4b58b6249766f071e3c7"
+            val outdoorsSource = object : OnlineTileSourceBase(
+                "ThunderforestOutdoors", 0, 22, 256, ".png",
+                arrayOf("https://tile.thunderforest.com/")
+            ) {
+                override fun getTileURLString(pMapTileIndex: Long): String {
+                    val z = MapTileIndex.getZoom(pMapTileIndex)
+                    val x = MapTileIndex.getX(pMapTileIndex)
+                    val y = MapTileIndex.getY(pMapTileIndex)
+                    return "https://tile.thunderforest.com/atlas/$z/$x/$y.png?apikey=$key"
+                }
+            }
+            setTileSource(outdoorsSource)
+            controller.setZoom(14.0)
+            controller.setCenter(GeoPoint(56.7969, -5.0036))
+        }
+        root.addView(map, CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.MATCH_PARENT,
+            CoordinatorLayout.LayoutParams.MATCH_PARENT
+        ))
+
+        routeOverlay = RouteGradientOverlay { graph }
+        map.overlays.add(routeOverlay)
+
+        // ── Stats FAB ────────────────────────────────────────────────────────
+        val fab = FloatingActionButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_info_details)
+            contentDescription = "Navigation stats"
+            setOnClickListener { showStatsPopup() }
+        }
+        val fabParams = CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.END
+            val margin = (resources.displayMetrics.density * 16).toInt()
+            val peekOffset = (resources.displayMetrics.density * 156).toInt()
+            setMargins(margin, margin, margin, peekOffset)
+        }
+        root.addView(fab, fabParams)
+
+        // ── Voice mute FAB (above the info FAB) ──────────────────────────────
+        voiceFab = FloatingActionButton(this).apply {
+            setImageResource(android.R.drawable.ic_lock_silent_mode_off)
+            contentDescription = "Mute voice navigation"
+            setOnClickListener { toggleVoiceMute() }
+        }
+        val voiceFabParams = CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.END
+            val margin    = (resources.displayMetrics.density * 16).toInt()
+            val peekOff   = (resources.displayMetrics.density * 156).toInt()
+            val fabSize   = (resources.displayMetrics.density * 56).toInt()
+            setMargins(margin, margin, margin, peekOff + fabSize + margin)
+        }
+        root.addView(voiceFab, voiceFabParams)
+
+        // ── Select Hill FAB (bottom-right, above voice FAB) ──────────────────
+        val hillFab = FloatingActionButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_search)
+            contentDescription = "Find a hill"
+            setOnClickListener { showHillSearch() }
+        }
+        val hillFabParams = CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.END
+            val margin  = (resources.displayMetrics.density * 16).toInt()
+            val peekOff = (resources.displayMetrics.density * 156).toInt()
+            val fabSize = (resources.displayMetrics.density * 56).toInt()
+            setMargins(margin, margin, margin, peekOff + (fabSize + margin) * 2)
+        }
+        root.addView(hillFab, hillFabParams)
+
+        // ── Driving banner (hidden until driving phase) ───────────────────────
+        driveBanner = FrameLayout(this).apply { visibility = View.GONE }
+        val bannerContent = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0xFF0D47A1.toInt())  // dark blue
+            setPadding(
+                (resources.displayMetrics.density * 16).toInt(),
+                (resources.displayMetrics.density * 10).toInt(),
+                (resources.displayMetrics.density * 12).toInt(),
+                (resources.displayMetrics.density * 10).toInt()
+            )
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val bannerLabel = TextView(this).apply {
+            id = android.R.id.text1
+            textSize = 13.5f
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val arriveBtn = TextView(this).apply {
+            text = "I'm Here"
+            textSize = 13f
+            setTextColor(0xFF4FC3F7.toInt())
+            setPadding(
+                (resources.displayMetrics.density * 12).toInt(), 0,
+                (resources.displayMetrics.density * 4).toInt(), 0
+            )
+            setOnClickListener { arriveAtCarPark() }
+        }
+        bannerContent.addView(bannerLabel)
+        bannerContent.addView(arriveBtn)
+        driveBanner.addView(bannerContent, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ))
+        val bannerParams = CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.MATCH_PARENT,
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT
+        ).apply { gravity = Gravity.TOP }
+        root.addView(driveBanner, bannerParams)
+
+        // ── Bottom Sheet ─────────────────────────────────────────────────────
+        val bottomSheet = FrameLayout(this).apply {
+            setBackgroundColor(0xFF171717.toInt())
+            elevation = 24f
+        }
+        val sheetContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(36, 24, 36, 28)
+        }
+
+        val handle = View(this).apply { setBackgroundColor(0xFF444444.toInt()) }
+        val handleParams = LinearLayout.LayoutParams(
+            (resources.displayMetrics.density * 44).toInt(),
+            (resources.displayMetrics.density * 5).toInt()
+        ).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            bottomMargin = (resources.displayMetrics.density * 14).toInt()
+        }
+        handle.layoutParams = handleParams
+        handle.alpha = 0.85f
+
+        sheetTitle = TextView(this).apply {
+            textSize = 18f; setTextColor(Color.WHITE); text = "Route: —"
+        }
+        sheetSubtitle = TextView(this).apply {
+            textSize = 13.5f; setTextColor(0xFFBDBDBD.toInt())
+            text = "Tap to cycle routes • Long-press to clear"
+        }
+
+        val primaryRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; setPadding(0, 20, 0, 16)
+        }
+        statDistance = statBox("Distance", "—")
+        statAscent   = statBox("Ascent", "—")
+        statTime     = statBox("Time", "—")
+        primaryRow.addView(statDistance, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        primaryRow.addView(space(10))
+        primaryRow.addView(statAscent,   LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        primaryRow.addView(space(10))
+        primaryRow.addView(statTime,     LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+
+        val liveHeader = TextView(this).apply {
+            textSize = 13.5f; setTextColor(0xFFE0E0E0.toInt())
+            text = "Live (Navigation Mode)"; setPadding(0, 10, 0, 10)
+        }
+        val liveRow1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        statTtd    = statBox("TTD", "—")
+        statHeight = statBox("Height", "—")
+        liveRow1.addView(statTtd,    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        liveRow1.addView(space(10))
+        liveRow1.addView(statHeight, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+
+        val liveRow2 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; setPadding(0, 10, 0, 0)
+        }
+        statSpeed   = statBox("Speed", "—")
+        statGridRef = statBox("Grid Ref", "—")
+        liveRow2.addView(statSpeed,   LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        liveRow2.addView(space(10))
+        liveRow2.addView(statGridRef, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+
+        // Route selector chips — populated after routing, hidden until then
+        routeSelectorRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 8, 0, 4)
+            visibility = View.GONE
+        }
+
+        sheetContent.addView(handle)
+        sheetContent.addView(sheetTitle)
+        sheetContent.addView(sheetSubtitle)
+        sheetContent.addView(routeSelectorRow)
+        sheetContent.addView(primaryRow)
+        sheetContent.addView(divider())
+        sheetContent.addView(liveHeader)
+        sheetContent.addView(liveRow1)
+        sheetContent.addView(liveRow2)
+
+        bottomSheet.addView(sheetContent, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ))
+
+        val sheetParams = CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.MATCH_PARENT,
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT
+        ).apply { gravity = Gravity.BOTTOM }
+
+        val behavior = BottomSheetBehavior<FrameLayout>().apply {
+            isHideable = false; isFitToContents = true; skipCollapsed = false
+            peekHeight = (resources.displayMetrics.density * 140).toInt()
+            state = BottomSheetBehavior.STATE_COLLAPSED
+        }
+        sheetParams.behavior = behavior
+        bottomSheetBehavior = behavior
+        root.addView(bottomSheet, sheetParams)
+
+        sheetTitle.setOnClickListener { cycleRoute() }
+        sheetTitle.setOnLongClickListener { clearRoutes(); true }
+        sheetSubtitle.setOnClickListener { cycleRoute() }
+        sheetSubtitle.setOnLongClickListener { clearRoutes(); true }
+
+        setContentView(root)
+
+        map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
+            override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+                handleTap(p); return true
+            }
+            override fun longPressHelper(p: GeoPoint): Boolean {
+                clearRoutes(); return true
+            }
+        }))
+
+        // Double-tap overlay: intercepts double-tap to clear route, passes everything else through
+        map.overlays.add(object : org.osmdroid.views.overlay.Overlay() {
+            private val gd = GestureDetector(this@MainActivity,
+                object : GestureDetector.SimpleOnGestureListener() {
+                    override fun onDoubleTap(e: MotionEvent): Boolean {
+                        clearRoutes()
+                        return true
+                    }
+                })
+            override fun onTouchEvent(event: MotionEvent, mapView: MapView): Boolean {
+                return gd.onTouchEvent(event)
+            }
+        })
+
+        updateSheetForNoRoute()
+        requestLocationPermission()
+    }
+
+    // ── GPS ──────────────────────────────────────────────────────────────────
+
+    private fun requestLocationPermission() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                LOCATION_PERMISSION_REQUEST
+            )
+        } else {
+            startLocationUpdates()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERMISSION_REQUEST &&
+            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            startLocationUpdates()
+        }
+    }
+
+    private fun startLocationUpdates() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) return
+
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L)
+            .setMinUpdateIntervalMillis(1500L)
+            .build()
+        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+    }
+
+    override fun onPause() {
+        super.onPause()
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        stopPopupUpdates()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        startLocationUpdates()
+    }
+
+    // ── Route progress tracking ───────────────────────────────────────────────
+
+    private fun updateProgressFromLocation(location: Location) {
+        val idx = routeIndex ?: return
+        val candidate = routeCandidates.getOrNull(activeIndex) ?: return
+        val nodeIds = candidate.nodeIds
+
+        var bestSq      = Double.MAX_VALUE
+        var bestCumDist = 0.0
+        var nearestId   = -1
+        val lat = location.latitude; val lon = location.longitude
+
+        for (i in nodeIds.indices) {
+            val node = graph.nodes[nodeIds[i]] ?: continue
+            val dx = (node.lat - lat) * 111_320.0
+            val dy = (node.lon - lon) * 111_320.0 * cos(Math.toRadians(lat))
+            val sq = dx * dx + dy * dy
+            if (sq < bestSq) {
+                bestSq      = sq
+                bestCumDist = idx.cumulativeDistance[i]
+                nearestId   = nodeIds[i]
+            }
+        }
+        progressMeters = bestCumDist
+        voiceNavigator.onProgressUpdate(progressMeters)
+        if (nearestId != -1) checkOffTrack(location, sqrt(bestSq), nearestId)
+    }
+
+    private fun checkOffTrack(location: Location, distToRouteM: Double, nearestNodeId: Int) {
+        if (routeIndex == null) return
+
+        if (distToRouteM > OFF_TRACK_THRESHOLD_M) {
+            offTrackCount++
+            val now = System.currentTimeMillis()
+            val shouldAnnounce = offTrackCount == OFF_TRACK_TRIGGER_FIXES ||
+                (offTrackCount > OFF_TRACK_TRIGGER_FIXES &&
+                    now - lastOffTrackAnnounce > OFF_TRACK_REANNOUNCE_MS)
+
+            if (shouldAnnounce) {
+                lastOffTrackAnnounce = now
+                val node    = graph.nodes[nearestNodeId] ?: return
+                val b       = routeBearing(location.latitude, location.longitude, node.lat, node.lon)
+                val dir     = compassPoint(b)
+                val distStr = "${distToRouteM.toInt()} metres"
+                voiceNavigator.speakNow(
+                    "Off route. Head $dir for approximately $distStr to return to the path."
+                )
+            }
+        } else {
+            if (offTrackCount >= OFF_TRACK_TRIGGER_FIXES) {
+                voiceNavigator.speakNow("Back on route.")
+            }
+            offTrackCount        = 0
+            lastOffTrackAnnounce = 0L
+        }
+    }
+
+    private fun updateLiveStatsInSheet() {
+        val loc = lastLocation ?: return
+        val idx = routeIndex
+
+        val gridRef = OsGridRef.fromWGS84(loc.latitude, loc.longitude)
+        statGridRef.text = "Grid Ref\n$gridRef"
+
+        val altM = if (loc.hasAltitude()) "%.0f m".format(loc.altitude) else "—"
+        statHeight.text = "Height\n$altM"
+
+        val speedKmh = if (loc.hasSpeed()) "%.1f km/h".format(loc.speed * 3.6f) else "—"
+        statSpeed.text = "Speed\n$speedKmh"
+
+        if (idx != null) {
+            val remaining = (idx.totalDistance - progressMeters).coerceAtLeast(0.0)
+            statTtd.text = "TTD\n${formatTtd(remaining, idx.totalDistance)}"
+        }
+    }
+
+    // ── Stats popup ───────────────────────────────────────────────────────────
+
+    private fun showStatsPopup() {
+        statsDialog?.dismiss()
+
+        val dp = resources.displayMetrics.density
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                (dp * 20).toInt(), (dp * 16).toInt(),
+                (dp * 20).toInt(), (dp * 20).toInt()
+            )
+            setBackgroundColor(0xFF1E1E1E.toInt())
+        }
+
+        // Mountain name + height row
+        val hill = selectedHill
+        val hillRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, (dp * 4).toInt())
+        }
+        val hillName = TextView(this).apply {
+            val elev = hill?.elevationM
+            text = when {
+                hill == null         -> "Navigation Stats"
+                elev != null         -> "${hill.name}  •  ${elev} m"
+                else                 -> hill.name
+            }
+            textSize = 17f
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        hillRow.addView(hillName)
+        if (hill != null) {
+            val hearBtn = TextView(this).apply {
+                text = "🔊"
+                textSize = 20f
+                setPadding((dp * 8).toInt(), 0, 0, 0)
+                setOnClickListener {
+                    val spoke = voiceNavigator.pronounce(hill.name)
+                    Toast.makeText(
+                        this@MainActivity,
+                        if (spoke) hill.name
+                        else "${hill.name}\n(Enable TTS in Settings › Accessibility › Text-to-speech)",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            hillRow.addView(hearBtn)
+        }
+        root.addView(hillRow)
+        root.addView(divider())
+
+        // Elevation profile — always created, visibility toggled in refresh()
+        val profileView = ElevationProfileView(this)
+        val profileViewParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            (dp * 130).toInt()
+        ).apply { bottomMargin = (dp * 10).toInt() }
+        root.addView(profileView, profileViewParams)
+
+        val profileDivider = divider()
+        root.addView(profileDivider)
+
+        // Live stats rows
+        val popTtd  = popupStatRow("Time to dest",  "—")
+        val popDist = popupStatRow("Distance left",  "—")
+        val popElev = popupStatRow("Elevation",      "—")
+        val popGrid = popupStatRow("Grid ref",       "—")
+        for (row in listOf(popTtd, popDist, popElev, popGrid)) root.addView(row)
+
+        val scroll = ScrollView(this)
+        scroll.addView(root)
+
+        val dialog = Dialog(this, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar).apply {
+            setContentView(scroll)
+            window?.setLayout(
+                (resources.displayMetrics.widthPixels * 0.92).toInt(),
+                WindowManager.LayoutParams.WRAP_CONTENT
+            )
+            window?.setBackgroundDrawableResource(android.R.color.transparent)
+        }
+
+        fun refresh() {
+            val loc = lastLocation
+            val idx = routeIndex
+            // Read elevationProfile fresh each call — it may have been set since popup opened
+            val profile = elevationProfile
+
+            if (profile != null) {
+                profileView.visibility = View.VISIBLE
+                profileDivider.visibility = View.VISIBLE
+                profileView.setProfile(profile, progressMeters)
+            } else {
+                profileView.visibility = View.GONE
+                profileDivider.visibility = View.GONE
+            }
+
+            val gridText = if (loc != null) OsGridRef.fromWGS84(loc.latitude, loc.longitude) else "—"
+            val elevText = if (loc?.hasAltitude() == true) "%.0f m".format(loc.altitude) else "—"
+            popGrid.getChildAt(1)?.let { (it as? TextView)?.text = gridText }
+            popElev.getChildAt(1)?.let { (it as? TextView)?.text = elevText }
+
+            if (idx != null) {
+                val remaining = (idx.totalDistance - progressMeters).coerceAtLeast(0.0)
+                popTtd.getChildAt(1)?.let {
+                    (it as? TextView)?.text = formatTtd(remaining, idx.totalDistance)
+                }
+                popDist.getChildAt(1)?.let {
+                    (it as? TextView)?.text = "%.1f km".format(remaining / 1000.0)
+                }
+            }
+        }
+
+        refresh()
+
+        val runnable = object : Runnable {
+            override fun run() {
+                if (dialog.isShowing) { refresh(); popupHandler.postDelayed(this, 2000L) }
+            }
+        }
+        popupUpdateRunnable = runnable
+        popupHandler.postDelayed(runnable, 2000L)
+
+        dialog.setOnDismissListener { stopPopupUpdates() }
+        statsDialog = dialog
+        dialog.show()
+    }
+
+    private fun updateStatsPopupIfOpen() {
+        // Popup refreshes via its own runnable; nothing extra needed here
+    }
+
+    private fun stopPopupUpdates() {
+        popupUpdateRunnable?.let { popupHandler.removeCallbacks(it) }
+        popupUpdateRunnable = null
+    }
+
+    // ── Popup helper: a label + value row ────────────────────────────────────
+
+    private fun popupStatRow(label: String, value: String): LinearLayout {
+        val dp = resources.displayMetrics.density
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, (dp * 6).toInt(), 0, (dp * 6).toInt())
+
+            addView(TextView(this@MainActivity).apply {
+                text = label
+                textSize = 14f
+                setTextColor(0xFFBDBDBD.toInt())
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = value
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.END
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            })
+        }
+    }
+
+    // ── Route building ────────────────────────────────────────────────────────
+
+    private fun handleTap(p: GeoPoint) {
+        when {
+            navPhase == NavPhase.HILL_NAV && tapPoints.size == 1 -> {
+                // Hill was pre-selected (destination already set); first map tap = Start
+                // Reorder: insert new Start before the existing destination
+                val destPoint  = tapPoints.removeLast()
+                val destMarker = tapMarkers.removeLast()
+                map.overlays.remove(destMarker)
+
+                tapPoints.add(p)
+                tapMarkers.add(addMarker(p, "Start", 0xFF2E7D32.toInt()))
+
+                tapPoints.add(destPoint)
+                tapMarkers.add(addMarker(destPoint,
+                    selectedHill?.name ?: "Destination", 0xFFC62828.toInt()))
+
+                buildRoutes()
+            }
+            tapPoints.size == 0 -> {
+                // First tap → Start
+                tapPoints.add(p)
+                tapMarkers.add(addMarker(p, "Start", 0xFF2E7D32.toInt()))
+                map.invalidate()
+            }
+            tapPoints.size == 1 -> {
+                // Second tap → Destination, start routing
+                tapPoints.add(p)
+                tapMarkers.add(addMarker(p, "Destination", 0xFFC62828.toInt()))
+                buildRoutes()
+            }
+            else -> {
+                // Third tap onwards → insert waypoint before the destination
+                val destPoint  = tapPoints.removeLast()
+                val destMarker = tapMarkers.removeLast()
+                map.overlays.remove(destMarker)
+
+                tapPoints.add(p)
+                tapMarkers.add(addMarker(p, "Waypoint ${tapPoints.size - 1}", 0xFF1565C0.toInt()))
+
+                tapPoints.add(destPoint)
+                tapMarkers.add(addMarker(destPoint, "Destination", 0xFFC62828.toInt()))
+
+                buildRoutes()
+            }
+        }
+    }
+
+    private fun buildRoutes() {
+        if (tapPoints.size < 2) return
+        routeCandidates.clear(); activeIndex = 0; routeOverlay.clear()
+        sheetTitle.text    = "Finding route…"
+        sheetSubtitle.text = ""
+        val points = tapPoints.toList()
+        Thread {
+            try {
+                val found = buildRouteForPoints(points)
+                runOnUiThread {
+                    routeCandidates += found
+                    if (routeCandidates.isEmpty()) {
+                        sheetTitle.text = "No route found"
+                    } else {
+                        drawActiveRoute(); buildNavigationIndex(); updateSheetForActiveRoute()
+                    }
+                    map.invalidate()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    sheetTitle.text = "No route found"
+                    map.invalidate()
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Two-point case: full curated candidate generation (Tourist Path, CMD Arête, Ledge Route).
+     * Multi-point case: route segment-by-segment through each waypoint, stitching into one path.
+     * Each segment uses curated candidate generation so the correct named route is picked up
+     * as soon as a waypoint lands near a route landmark (e.g. near ledge_route_start).
+     */
+    private fun buildRouteForPoints(points: List<GeoPoint>): List<RouteCandidate> {
+        return if (points.size == 2) {
+            buildStandardCandidates(points[0], points[1])
+        } else {
+            buildWaypointRoute(points)
+        }
+    }
+
+    /**
+     * Returns the nearest node IDs that have at least one edge (i.e. are connected in the graph).
+     * Searches a wider pool of [pool] candidates and takes the [k] closest connected ones.
+     * Falls back to any nearest node if none have edges (shouldn't happen with valid graph data).
+     */
+    private fun nearestConnectedNodeIds(lat: Double, lon: Double, k: Int, pool: Int = 50): List<Int> {
+        val candidates = bundledGraph.nearestNodeIds(lat, lon, pool)
+        val connected  = candidates.filter { bundledGraph.edges[it]?.isNotEmpty() == true }.take(k)
+        return connected.ifEmpty { candidates.take(k) }
+    }
+
+    private fun buildStandardCandidates(start: GeoPoint, end: GeoPoint): List<RouteCandidate> {
+        // Use connected nodes only — always check against the bundled graph for coverage
+        val startIds = nearestConnectedNodeIds(start.latitude, start.longitude, 10)
+        val endIds   = nearestConnectedNodeIds(end.latitude,   end.longitude,   10)
+        val sId = startIds.firstOrNull() ?: return emptyList()
+        val eId = endIds.firstOrNull()   ?: return emptyList()
+
+        // Check if the bundled graph covers this area (use bundledGraph — never mutated)
+        val nearestDistToStart = bundledGraph.nodes[sId]?.let {
+            haversine(start.latitude, start.longitude, it.lat, it.lon)
+        } ?: Double.MAX_VALUE
+
+        if (nearestDistToStart > 2_000.0) {
+            // Bundled graph has no data here — download footpath network from Overpass
+            runOnUiThread { sheetTitle.text = "Downloading map data…" }
+            val midLat = (start.latitude  + end.latitude)  / 2.0
+            val midLon = (start.longitude + end.longitude) / 2.0
+            val routeDist = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
+            val radius = (routeDist / 2.0 + 4_000.0).toInt().coerceIn(8_000, 20_000)
+
+            val overpassGraph = try {
+                OverpassGraphBuilder.buildForArea(midLat, midLon, radius)
+            } catch (e: Exception) {
+                return emptyList()
+            } ?: return emptyList()
+
+            // Snap start/end pins to the nearest path-network nodes with edges.
+            // We connect VSTART and VEND to the 5 closest nodes each so that A*
+            // can find the route even when the single nearest node happens to be
+            // on a disconnected component (common where OSM has small highway-type gaps).
+            val VSTART = -1
+            val VEND   = -2
+
+            val connectedEntries = overpassGraph.nodes.entries
+                .filter { overpassGraph.edges[it.key]?.isNotEmpty() == true }
+            fun snapEdgesTo(pinLat: Double, pinLon: Double): List<Edge> =
+                connectedEntries
+                    .sortedBy { (_, n) -> haversine(pinLat, pinLon, n.lat, n.lon) }
+                    .take(5)
+                    .map { (id, n) ->
+                        Edge(to = id, cost = haversine(pinLat, pinLon, n.lat, n.lon),
+                             requiredMask = Capability.WALKING)
+                    }
+
+            val startSnaps = snapEdgesTo(start.latitude, start.longitude)
+            val endSnaps   = snapEdgesTo(end.latitude,   end.longitude)
+            if (startSnaps.isEmpty() || endSnaps.isEmpty()) return emptyList()
+
+            val snapNodes = (bundledGraph.nodes + overpassGraph.nodes).toMutableMap()
+            snapNodes[VSTART] = Node(start.latitude, start.longitude, 0.0)
+            snapNodes[VEND]   = Node(end.latitude,   end.longitude,   0.0)
+            val snapEdges = (bundledGraph.edges + overpassGraph.edges).toMutableMap()
+            snapEdges[VSTART] = startSnaps
+            // Add reverse edges from each end-snap node → VEND
+            for (snap in endSnaps) {
+                snapEdges[snap.to] = (snapEdges[snap.to] ?: emptyList()) +
+                    Edge(to = VEND, cost = snap.cost, requiredMask = Capability.WALKING)
+            }
+
+            val snapGraph  = Graph(nodes = snapNodes, edges = snapEdges, landmarks = graph.landmarks)
+            val snapRouter = AStarRouter(snapGraph)
+
+            var result = snapRouter.routeWithCapabilities(
+                VSTART, VEND, Capability.ALL, emptySet(), emptySet()
+            )
+
+            // ── Fallback 1: bridge disconnected components ───────────────────
+            // If A* found no path, the start and end sides of the network are in separate
+            // connected components (OSM data gaps). Find the closest node pair across the
+            // two reachable sets and add a virtual bridge edge, then retry A*.
+            if (result == null || result.nodeIds.size < 2) {
+                fun reachableFrom(seeds: List<Edge>): HashSet<Int> {
+                    val visited = HashSet<Int>()
+                    val queue   = ArrayDeque<Int>()
+                    for (s in seeds) { if (visited.add(s.to)) queue.add(s.to) }
+                    while (queue.isNotEmpty()) {
+                        val cur = queue.removeFirst()
+                        for (e in snapEdges[cur] ?: emptyList()) {
+                            if (e.to >= 0 && visited.add(e.to)) queue.add(e.to)
+                        }
+                    }
+                    return visited
+                }
+                val startReachable = reachableFrom(startSnaps)
+                val endReachable   = reachableFrom(endSnaps)
+                if (startReachable.none { it in endReachable }) {
+                    // Locate closest cross-component node pair and bridge it
+                    var minDist = Double.MAX_VALUE; var bFrom = -1; var bTo = -1
+                    for (s in startReachable) {
+                        val ns = snapNodes[s] ?: continue
+                        for (e in endReachable) {
+                            val ne = snapNodes[e] ?: continue
+                            val d  = haversine(ns.lat, ns.lon, ne.lat, ne.lon)
+                            if (d < minDist) { minDist = d; bFrom = s; bTo = e }
+                        }
+                    }
+                    if (bFrom >= 0) {
+                        snapEdges[bFrom] = (snapEdges[bFrom] ?: emptyList()) +
+                            Edge(to = bTo,   cost = minDist, requiredMask = Capability.WALKING)
+                        snapEdges[bTo]   = (snapEdges[bTo]   ?: emptyList()) +
+                            Edge(to = bFrom, cost = minDist, requiredMask = Capability.WALKING)
+                        val bridgedGraph  = Graph(nodes = snapNodes, edges = snapEdges, landmarks = graph.landmarks)
+                        val bridgedRouter = AStarRouter(bridgedGraph)
+                        result = bridgedRouter.routeWithCapabilities(
+                            VSTART, VEND, Capability.ALL, emptySet(), emptySet()
+                        )
+                        // snapEdges already mutated in place above — no further action needed
+                    }
+                }
+            }
+
+            // ── Fallback 2: straight-line route ──────────────────────────────
+            // If the network is so fragmented that even bridging fails, draw a direct
+            // line from start to end. This always succeeds and still gives distance/bearing.
+            val routeSucceeded = result != null && result.nodeIds.size >= 2
+            val routeNodeIds   = if (routeSucceeded) result!!.nodeIds else listOf(VSTART, VEND)
+            val isStraightLine = !routeSucceeded
+
+            // Promote snap graph so overlay and navigation resolve all node IDs correctly
+            graph             = Graph(nodes = snapNodes, edges = snapEdges, landmarks = graph.landmarks)
+            router            = AStarRouter(graph)
+            metricsCalculator = RouteMetricsCalculator(graph)
+            candidateGenerator = RouteCandidateGenerator(graph, router, metricsCalculator)
+
+            val metrics = metricsCalculator.calculate(routeNodeIds)
+            return listOf(RouteCandidate(
+                id = "direct", familyId = "direct_family",
+                name = "Direct Route",
+                shortDescription = if (isStraightLine) "Straight line — no mapped path found"
+                                   else "Best available path",
+                nodeIds = routeNodeIds, metrics = metrics,
+                difficultyProfile = DifficultyProfile(p95Slope = 0.0),
+                warnings = emptyList(), isSelectable = true
+            ))
+        }
+
+        // Only attempt curated Ben Nevis routes (Tourist Path, CMD Arête, Ledge Route)
+        // when the start AND end are actually near Ben Nevis (within 15 km of the summit).
+        val nearBenNevis =
+            haversine(start.latitude, start.longitude, BEN_NEVIS_LAT, BEN_NEVIS_LON) < 15_000.0 &&
+            haversine(end.latitude,   end.longitude,   BEN_NEVIS_LAT, BEN_NEVIS_LON) < 15_000.0
+        if (nearBenNevis && sId != eId) {
+            for (s in startIds) {
+                for (e in endIds) {
+                    val c = candidateGenerator.generateCuratedCandidates(s, e)
+                    if (c.isNotEmpty()) return c
+                }
+            }
+        }
+
+        // Direct A* on bundled graph — falls through to straight-line if it fails
+        val bundledResult = if (sId != eId) router.routeWithCapabilities(
+            sId, eId, Capability.ALL, emptySet(), emptySet()
+        ) else null
+
+        if (bundledResult != null && bundledResult.nodeIds.size >= 2) {
+            val metrics = metricsCalculator.calculate(bundledResult.nodeIds)
+            return listOf(RouteCandidate(
+                id = "direct", familyId = "direct_family",
+                name = "Direct Route",
+                shortDescription = "Best available path",
+                nodeIds = bundledResult.nodeIds,
+                metrics = metrics,
+                difficultyProfile = DifficultyProfile(p95Slope = 0.0),
+                warnings = emptyList(),
+                isSelectable = true
+            ))
+        }
+
+        // ── Bundled-graph straight-line fallback ─────────────────────────────
+        // A* failed on the bundled graph (or sId==eId). Add virtual pins to the
+        // current graph and return a direct line so the user always gets a route.
+        val VSTART = -1; val VEND = -2
+        val fbNodes = graph.nodes.toMutableMap()
+        fbNodes[VSTART] = Node(start.latitude, start.longitude, 0.0)
+        fbNodes[VEND]   = Node(end.latitude,   end.longitude,   0.0)
+        val fbEdges = graph.edges.toMutableMap()
+        val fbDist  = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
+        fbEdges[VSTART] = listOf(Edge(to = VEND, cost = fbDist, requiredMask = Capability.WALKING))
+        val fbGraph = Graph(nodes = fbNodes, edges = fbEdges, landmarks = graph.landmarks)
+        graph             = fbGraph
+        router            = AStarRouter(fbGraph)
+        metricsCalculator = RouteMetricsCalculator(fbGraph)
+        candidateGenerator = RouteCandidateGenerator(fbGraph, router, metricsCalculator)
+        val fbMetrics = metricsCalculator.calculate(listOf(VSTART, VEND))
+        return listOf(RouteCandidate(
+            id = "direct", familyId = "direct_family",
+            name = "Direct Route",
+            shortDescription = "Straight line — no mapped path found",
+            nodeIds = listOf(VSTART, VEND),
+            metrics = fbMetrics,
+            difficultyProfile = DifficultyProfile(p95Slope = 0.0),
+            warnings = emptyList(),
+            isSelectable = true
+        ))
+    }
+
+    private fun buildWaypointRoute(points: List<GeoPoint>): List<RouteCandidate> {
+        // Detect if any point is outside bundled-graph coverage (nearest node > 2 km away).
+        val anyRemote = points.any { p ->
+            val id = bundledGraph.nearestNodeIds(p.latitude, p.longitude, 1).firstOrNull()
+                ?: return@any true
+            val n = bundledGraph.nodes[id] ?: return@any true
+            haversine(p.latitude, p.longitude, n.lat, n.lon) > 2_000.0
+        }
+
+        if (!anyRemote) {
+            // All points in bundled-graph coverage — route segment-by-segment as before.
+            val segments = mutableListOf<List<Int>>()
+            for (i in 0 until points.size - 1) {
+                val fromIds = nearestConnectedNodeIds(points[i].latitude,   points[i].longitude,   5)
+                val toIds   = nearestConnectedNodeIds(points[i+1].latitude, points[i+1].longitude, 5)
+                var seg: List<Int>? = null
+                outer@ for (sId in fromIds) {
+                    for (eId in toIds) {
+                        val c = candidateGenerator.generateCuratedCandidates(sId, eId)
+                        if (c.isNotEmpty()) { seg = c[0].nodeIds; break@outer }
+                    }
+                }
+                if (seg == null) {
+                    val sId = fromIds.firstOrNull() ?: return emptyList()
+                    val eId = toIds.firstOrNull()   ?: return emptyList()
+                    seg = router.routeWithCapabilities(sId, eId, Capability.ALL,
+                        emptySet(), emptySet())?.nodeIds ?: return emptyList()
+                }
+                segments.add(seg)
+            }
+            val fullPath = segments.fold(listOf<Int>()) { acc, seg ->
+                if (acc.isEmpty()) seg else acc.dropLast(1) + seg
+            }
+            if (fullPath.isEmpty()) return emptyList()
+            val wps = points.size - 2
+            return listOf(RouteCandidate(
+                id = "waypoint_route", familyId = "waypoint_family",
+                name = "Custom Route",
+                shortDescription = "Via $wps waypoint${if (wps != 1) "s" else ""}",
+                nodeIds = fullPath,
+                metrics = metricsCalculator.calculate(fullPath),
+                difficultyProfile = DifficultyProfile(p95Slope = 0.0),
+                warnings = emptyList(), isSelectable = true
+            ))
+        }
+
+        // Remote area — download a single Overpass graph covering the bounding box of all points.
+        // This ensures all segment node IDs come from the same graph (no ID conflicts when stitching).
+        runOnUiThread { sheetTitle.text = "Downloading map data…" }
+        val minLat = points.minOf { it.latitude }
+        val maxLat = points.maxOf { it.latitude }
+        val minLon = points.minOf { it.longitude }
+        val maxLon = points.maxOf { it.longitude }
+        val midLat = (minLat + maxLat) / 2
+        val midLon = (minLon + maxLon) / 2
+        val diagDist = haversine(minLat, minLon, maxLat, maxLon)
+        val radius = (diagDist / 2 + 4_000.0).toInt().coerceIn(8_000, 20_000)
+
+        val overpassGraph = try {
+            OverpassGraphBuilder.buildForArea(midLat, midLon, radius)
+        } catch (e: Exception) { return emptyList() } ?: return emptyList()
+
+        // Snap each point to the Overpass graph using unique virtual node IDs (-10, -11, …).
+        val snapNodes = (bundledGraph.nodes + overpassGraph.nodes).toMutableMap()
+        val snapEdges = (bundledGraph.edges + overpassGraph.edges).toMutableMap()
+        val connectedEntries = overpassGraph.nodes.entries
+            .filter { overpassGraph.edges[it.key]?.isNotEmpty() == true }
+
+        fun snapEdgesTo(pinLat: Double, pinLon: Double): List<Edge> =
+            connectedEntries
+                .sortedBy { (_, n) -> haversine(pinLat, pinLon, n.lat, n.lon) }
+                .take(5)
+                .map { (id, n) ->
+                    Edge(to = id, cost = haversine(pinLat, pinLon, n.lat, n.lon),
+                         requiredMask = Capability.WALKING)
+                }
+
+        val virtualIds = points.mapIndexed { i, p ->
+            val vid = -(10 + i)   // -10, -11, -12, … (avoids -1/-2 used by buildStandardCandidates)
+            snapNodes[vid] = Node(p.latitude, p.longitude, 0.0)
+            val snaps = snapEdgesTo(p.latitude, p.longitude)
+            snapEdges[vid] = snaps
+            for (s in snaps) {
+                snapEdges[s.to] = (snapEdges[s.to] ?: emptyList()) +
+                    Edge(to = vid, cost = s.cost, requiredMask = Capability.WALKING)
+            }
+            vid
+        }
+
+        if (snapEdges[virtualIds.first()].isNullOrEmpty() ||
+            snapEdges[virtualIds.last()].isNullOrEmpty()) return emptyList()
+
+        val waypointGraph  = Graph(nodes = snapNodes, edges = snapEdges, landmarks = graph.landmarks)
+        val waypointRouter = AStarRouter(waypointGraph)
+
+        val segments = mutableListOf<List<Int>>()
+        for (i in 0 until points.size - 1) {
+            val seg = waypointRouter.routeWithCapabilities(
+                virtualIds[i], virtualIds[i + 1], Capability.ALL, emptySet(), emptySet()
+            )?.nodeIds ?: return emptyList()
+            segments.add(seg)
+        }
+
+        val fullPath = segments.fold(listOf<Int>()) { acc, seg ->
+            if (acc.isEmpty()) seg else acc.dropLast(1) + seg
+        }
+        if (fullPath.isEmpty()) return emptyList()
+
+        // Promote waypointGraph so overlays and navigation resolve all node IDs correctly.
+        graph             = waypointGraph
+        router            = AStarRouter(waypointGraph)
+        metricsCalculator = RouteMetricsCalculator(waypointGraph)
+        candidateGenerator = RouteCandidateGenerator(waypointGraph, router, metricsCalculator)
+
+        val wps = points.size - 2
+        return listOf(RouteCandidate(
+            id = "waypoint_route", familyId = "waypoint_family",
+            name = "Custom Route",
+            shortDescription = "Via $wps waypoint${if (wps != 1) "s" else ""}",
+            nodeIds = fullPath,
+            metrics = metricsCalculator.calculate(fullPath),
+            difficultyProfile = DifficultyProfile(p95Slope = 0.0),
+            warnings = emptyList(), isSelectable = true
+        ))
+    }
+
+    private fun buildNavigationIndex() {
+        val candidate = routeCandidates.getOrNull(activeIndex) ?: return
+        val nodeIds = candidate.nodeIds
+
+        val idx = RouteIndex(graph, nodeIds)
+        routeIndex = idx
+
+        // Build elevation array from V2 node elevations where available.
+        // If the pack is V0 (elevation = 0 for all nodes), fall back to
+        // cumulative ascent so the profile still shows a meaningful climb shape.
+        val elevs = DoubleArray(nodeIds.size) { i ->
+            graph.nodes[nodeIds[i]]?.elevation ?: 0.0
+        }
+        val elevRange = elevs.maxOrNull()!! - elevs.minOrNull()!!
+        val profileElevs = if (elevRange > 20.0) {
+            elevs                    // V2 pack — real altitude values
+        } else {
+            idx.cumulativeAscent     // V0 pack — show "metres climbed" as proxy
+        }
+
+        elevationProfile = ElevationProfileModel(
+            idx.cumulativeDistance, profileElevs, idx.totalDistance
+        )
+        progressMeters = 0.0
+
+        val instructions = instructionGenerator.generate(nodeIds, idx.cumulativeDistance)
+        voiceNavigator.setInstructions(instructions)
+    }
+
+    private fun drawActiveRoute() {
+        routeOverlay.setRoute(routeCandidates[activeIndex].nodeIds)
+        routeOverlay.setInactiveRoutes(
+            routeCandidates.filterIndexed { i, _ -> i != activeIndex }.map { it.nodeIds }
+        )
+    }
+
+    private fun updateRouteSelector() {
+        routeSelectorRow.removeAllViews()
+        if (routeCandidates.size < 2) {
+            routeSelectorRow.visibility = View.GONE
+            return
+        }
+        routeSelectorRow.visibility = View.VISIBLE
+        val dp = resources.displayMetrics.density
+        routeCandidates.forEachIndexed { i, candidate ->
+            val chip = TextView(this).apply {
+                text = candidate.name
+                textSize = 12f
+                setPadding(
+                    (dp * 12).toInt(), (dp * 6).toInt(),
+                    (dp * 12).toInt(), (dp * 6).toInt()
+                )
+                setBackgroundColor(
+                    if (i == activeIndex) 0xFF4FC3F7.toInt() else 0xFF333333.toInt()
+                )
+                setTextColor(Color.WHITE)
+                setOnClickListener {
+                    if (activeIndex != i) {
+                        activeIndex = i
+                        drawActiveRoute()
+                        buildNavigationIndex()
+                        updateSheetForActiveRoute()
+                        map.invalidate()
+                    }
+                }
+            }
+            routeSelectorRow.addView(chip, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = (dp * 8).toInt() })
+        }
+    }
+
+    private fun cycleRoute() {
+        if (routeCandidates.size <= 1) return
+        activeIndex = (activeIndex + 1) % routeCandidates.size
+        drawActiveRoute()
+        buildNavigationIndex()
+        updateSheetForActiveRoute()
+        map.invalidate()
+    }
+
+    // ── Sheet updates ─────────────────────────────────────────────────────────
+
+    private fun updateSheetForNoRoute() {
+        sheetTitle.text    = selectedHill?.let { "To: ${it.name}" } ?: "Route: —"
+        sheetSubtitle.text = when {
+            navPhase == NavPhase.HILL_NAV && tapPoints.size == 1 ->
+                "Tap your start point on the map"
+            navPhase == NavPhase.HILL_NAV ->
+                "Tap map to set Start/End • Pull up for stats"
+            else ->
+                "Select a hill  •  or tap map to set Start/End"
+        }
+        statDistance.text  = "Distance\n—"
+        statAscent.text    = "Ascent\n—"
+        statTime.text      = "Time\n—"
+        statTtd.text       = "TTD\n—"
+        statHeight.text    = "Height\n—"
+        statSpeed.text     = "Speed\n—"
+        statGridRef.text   = "Grid Ref\n—"
+    }
+
+    private fun updateSheetForActiveRoute() {
+        val r = routeCandidates[activeIndex]
+        val m = r.metrics
+        val h = m.estimatedTimeMinutes / 60
+        val min = m.estimatedTimeMinutes % 60
+        val time = if (h > 0) "${h}h ${min}m" else "${min}m"
+
+        sheetTitle.text    = r.name
+        sheetSubtitle.text = "${r.shortDescription}   •   Tap ℹ for live stats"
+        statDistance.text  = "Distance\n%.1f km".format(m.distanceMeters / 1000.0)
+        statAscent.text    = "Ascent\n%.0f m".format(m.ascentMeters)
+        statTime.text      = "Time\n$time"
+        statTtd.text       = "TTD\n—"
+        statHeight.text    = "Height\n—"
+        statSpeed.text     = "Speed\n—"
+        statGridRef.text   = "Grid Ref\n—"
+        updateRouteSelector()
+    }
+
+    private fun clearRoutes() {
+        tapPoints.clear()
+        tapMarkers.forEach { map.overlays.remove(it) }
+        tapMarkers.clear()
+        routeCandidates.clear(); activeIndex = 0
+        routeOverlay.clear()
+        routeIndex = null; elevationProfile = null; progressMeters = 0.0
+        offTrackCount = 0; lastOffTrackAnnounce = 0L
+        navPhase = NavPhase.IDLE
+        selectedHill = null; selectedCarPark = null
+        driveBanner.visibility = View.GONE
+        voiceNavigator.clearInstructions()
+        routeSelectorRow.removeAllViews()
+        routeSelectorRow.visibility = View.GONE
+        updateSheetForNoRoute()
+        map.invalidate()
+    }
+
+    // ── TTD formatting ────────────────────────────────────────────────────────
+
+    private fun formatTtd(remainingMeters: Double, totalMeters: Double): String {
+        val candidate = routeCandidates.getOrNull(activeIndex) ?: return "—"
+        val totalMin  = candidate.metrics.estimatedTimeMinutes
+        val fraction  = if (totalMeters > 0) remainingMeters / totalMeters else 0.0
+        val remMin    = (totalMin * fraction).toInt()
+        val h = remMin / 60; val m = remMin % 60
+        return if (h > 0) "${h}h ${m}m" else "${m}m"
+    }
+
+    // ── Map helpers ───────────────────────────────────────────────────────────
+
+    private fun addMarker(p: GeoPoint, title: String, color: Int = Color.RED): Marker {
+        val marker = Marker(map)
+        marker.position = p
+        marker.title = title
+        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        marker.icon = makePinDrawable(color)
+        marker.setOnMarkerClickListener { m, _ -> promptRemoveMarker(m); true }
+        map.overlays.add(marker)
+        return marker
+    }
+
+    /** Tap a pin → offer to remove it. Rebuilds the route if enough pins remain. */
+    private fun promptRemoveMarker(marker: Marker) {
+        val idx = tapMarkers.indexOf(marker)
+        if (idx < 0) return
+        AlertDialog.Builder(this)
+            .setMessage("Remove \"${marker.title}\" pin?")
+            .setPositiveButton("Remove") { _, _ ->
+                tapMarkers.removeAt(idx)
+                tapPoints.removeAt(idx)
+                map.overlays.remove(marker)
+                if (tapPoints.size >= 2) buildRoutes()
+                else {
+                    routeCandidates.clear(); activeIndex = 0; routeOverlay.clear()
+                    updateSheetForNoRoute()
+                }
+                map.invalidate()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun makePinDrawable(color: Int): android.graphics.drawable.Drawable {
+        val dp = resources.displayMetrics.density
+        val r  = (dp * 10).toInt()
+        val w  = r * 2
+        val h  = (dp * 28).toInt()
+        val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val cv  = android.graphics.Canvas(bmp)
+        val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+        val stroke = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = Color.WHITE; style = android.graphics.Paint.Style.STROKE; strokeWidth = dp * 1.5f
+        }
+        // Circle head
+        cv.drawCircle(w / 2f, r.toFloat(), r - dp, fill)
+        cv.drawCircle(w / 2f, r.toFloat(), r - dp, stroke)
+        // Tail triangle
+        val path = android.graphics.Path().apply {
+            moveTo(w / 2f - dp * 3, r.toFloat() + dp * 2)
+            lineTo(w / 2f, h.toFloat())
+            lineTo(w / 2f + dp * 3, r.toFloat() + dp * 2)
+            close()
+        }
+        cv.drawPath(path, fill)
+        return android.graphics.drawable.BitmapDrawable(resources, bmp)
+    }
+
+    private fun statBox(label: String, value: String): TextView {
+        return TextView(this).apply {
+            textSize = 13.5f; setTextColor(Color.WHITE)
+            setPadding(22, 18, 22, 18)
+            setBackgroundColor(0xFF222222.toInt())
+            text = "$label\n$value"
+        }
+    }
+
+    private fun space(dp: Int): View {
+        val v = View(this)
+        val px = (resources.displayMetrics.density * dp).toInt()
+        v.layoutParams = LinearLayout.LayoutParams(px, 1)
+        return v
+    }
+
+    private fun divider(): View {
+        return View(this).apply {
+            setBackgroundColor(0xFF2A2A2A.toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (resources.displayMetrics.density * 1).toInt()
+            ).apply {
+                topMargin    = (resources.displayMetrics.density * 10).toInt()
+                bottomMargin = (resources.displayMetrics.density * 10).toInt()
+            }
+        }
+    }
+
+    /** True bearing (0-360, North = 0) from point 1 to point 2. */
+    private fun routeBearing(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val dLon = Math.toRadians(lon2 - lon1)
+        val φ1   = Math.toRadians(lat1)
+        val φ2   = Math.toRadians(lat2)
+        val y    = sin(dLon) * cos(φ2)
+        val x    = cos(φ1) * sin(φ2) - sin(φ1) * cos(φ2) * cos(dLon)
+        return (Math.toDegrees(atan2(y, x)) + 360.0) % 360.0
+    }
+
+    /** 8-point compass name suitable for speech. */
+    private fun compassPoint(b: Double): String {
+        val n = ((b % 360.0) + 360.0) % 360.0
+        return when {
+            n <  22.5 || n >= 337.5 -> "North"
+            n <  67.5               -> "North East"
+            n < 112.5               -> "East"
+            n < 157.5               -> "South East"
+            n < 202.5               -> "South"
+            n < 247.5               -> "South West"
+            n < 292.5               -> "West"
+            else                    -> "North West"
+        }
+    }
+
+    private fun haversine(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val r = 6_371_000.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2).pow(2) +
+            cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+        return 2 * r * asin(sqrt(a))
+    }
+
+    /** Returns a compass direction (N / NE / E … NW) from [fromLat,fromLon] toward [toLat,toLon]. */
+    private fun carParkBearing(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double): String {
+        val dLon = Math.toRadians(toLon - fromLon)
+        val lat1 = Math.toRadians(fromLat)
+        val lat2 = Math.toRadians(toLat)
+        val y = sin(dLon) * cos(lat2)
+        val x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        val deg = (Math.toDegrees(atan2(y, x)) + 360.0) % 360.0
+        val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        return dirs[((deg + 22.5) / 45.0).toInt() % 8]
+    }
+
+    // ── Hill selection ────────────────────────────────────────────────────────
+
+    private fun showHillSearch() {
+        val dp = resources.displayMetrics.density
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((dp * 16).toInt(), (dp * 8).toInt(), (dp * 16).toInt(), 0)
+        }
+
+        // Search row: text input + microphone button
+        val searchRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0xFF2A2A2A.toInt())
+        }
+        val searchInput = EditText(this).apply {
+            hint = "Search mountain or walk name…"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                        android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS
+            setTextColor(Color.WHITE)
+            setHintTextColor(0xFF666666.toInt())
+            background = null
+            setPadding((dp * 10).toInt(), (dp * 10).toInt(), (dp * 6).toInt(), (dp * 10).toInt())
+        }
+        val micBtn = TextView(this).apply {
+            text = "🎙"
+            textSize = 20f
+            gravity = android.view.Gravity.CENTER
+            setPadding((dp * 10).toInt(), 0, (dp * 10).toInt(), 0)
+            setOnClickListener {
+                pendingVoiceTarget = searchInput
+                @Suppress("DEPRECATION")
+                startActivityForResult(
+                    android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Say a mountain or walk name…")
+                    },
+                    SPEECH_REQUEST_CODE
+                )
+            }
+        }
+        searchRow.addView(searchInput, LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+        ))
+        searchRow.addView(micBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT
+        ))
+        container.addView(searchRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+
+        val statusText = TextView(this).apply {
+            text = "Type a mountain name to search…"
+            textSize = 12f
+            setTextColor(0xFF888888.toInt())
+            setPadding(0, (dp * 8).toInt(), 0, (dp * 4).toInt())
+        }
+        container.addView(statusText)
+
+        // "Did you mean?" container — vertical; rows of 2 chips added dynamically
+        val suggestContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(0, (dp * 4).toInt(), 0, (dp * 4).toInt())
+        }
+        container.addView(suggestContainer, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+
+        val listView = ListView(this).apply {
+            divider = null
+            setBackgroundColor(0xFF1E1E1E.toInt())
+        }
+        container.addView(listView, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, (dp * 280).toInt()
+        ))
+
+        val results = mutableListOf<HillSearchService.HillResult>()
+        val labels  = mutableListOf<String>()
+        val adapter = object : android.widget.ArrayAdapter<String>(
+            this, android.R.layout.simple_list_item_1, labels
+        ) {
+            override fun getView(pos: Int, cv: android.view.View?, parent: android.view.ViewGroup): android.view.View {
+                val v = super.getView(pos, cv, parent) as TextView
+                v.setTextColor(Color.WHITE)
+                v.setBackgroundColor(if (pos % 2 == 0) 0xFF252525.toInt() else 0xFF1E1E1E.toInt())
+                v.setPadding((dp * 12).toInt(), (dp * 14).toInt(), (dp * 12).toInt(), (dp * 14).toInt())
+                return v
+            }
+        }
+        listView.adapter = adapter
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Find a mountain or walk")
+            .setView(container)
+            .setNegativeButton("Cancel", null)
+            .create()
+        dialog.setOnDismissListener { pendingVoiceTarget = null }
+
+        listView.setOnItemClickListener { _, _, position, _ ->
+            dialog.dismiss()
+            fetchCarParksAndSelect(results[position])
+        }
+
+        // Populates "Did you mean?" as rows of 2 chips so they wrap neatly.
+        fun showSuggestions(query: String) {
+            val suggestions = HillSuggestionService.suggest(query)
+            suggestContainer.removeAllViews()
+            if (suggestions.isEmpty()) { suggestContainer.visibility = View.GONE; return }
+
+            suggestContainer.addView(TextView(this).apply {
+                text = "Did you mean:"
+                textSize = 12f
+                setTextColor(0xFF888888.toInt())
+                setPadding(0, 0, 0, (dp * 4).toInt())
+            })
+
+            // Add chips 2 per row so they always fit horizontally
+            suggestions.chunked(2).forEach { pair ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, 0, 0, (dp * 4).toInt())
+                }
+                pair.forEach { sug ->
+                    val chip = TextView(this).apply {
+                        text = sug
+                        textSize = 12f
+                        setTextColor(0xFF4FC3F7.toInt())
+                        setBackgroundColor(0xFF1A2A3A.toInt())
+                        setPadding((dp * 8).toInt(), (dp * 6).toInt(), (dp * 8).toInt(), (dp * 6).toInt())
+                        setOnClickListener {
+                            searchInput.setText(sug)
+                            searchInput.setSelection(sug.length)
+                        }
+                    }
+                    row.addView(chip, LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+                    ).apply { marginEnd = (dp * 6).toInt() })
+                }
+                // If odd number, last row has one chip — add an empty spacer to keep layout
+                if (pair.size == 1) {
+                    row.addView(View(this), LinearLayout.LayoutParams(0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                }
+                suggestContainer.addView(row, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ))
+            }
+            suggestContainer.visibility = View.VISIBLE
+        }
+
+        val searchHandler = Handler(Looper.getMainLooper())
+        var pending: Runnable? = null
+
+        searchInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val query = s?.toString()?.trim() ?: return
+                pending?.let { searchHandler.removeCallbacks(it) }
+                suggestContainer.visibility = View.GONE
+                if (query.length < 2) {
+                    statusText.text = "Type a mountain name to search…"
+                    results.clear(); labels.clear()
+                    adapter.notifyDataSetChanged()
+                    return
+                }
+                statusText.text = "Searching…"
+                val r = Runnable {
+                    Thread {
+                        val found = try { HillSearchService.search(query) }
+                                    catch (e: Exception) { emptyList() }
+                        runOnUiThread {
+                            results.clear(); results.addAll(found)
+                            labels.clear(); labels.addAll(found.map { it.displayLabel })
+                            adapter.notifyDataSetChanged()
+                            if (found.isEmpty()) {
+                                statusText.text = "No mountains found for \"$query\""
+                                showSuggestions(query)
+                            } else {
+                                statusText.text =
+                                    "${found.size} mountain${if (found.size != 1) "s" else ""} found"
+                                suggestContainer.visibility = View.GONE
+                            }
+                        }
+                    }.start()
+                }
+                pending = r
+                searchHandler.postDelayed(r, 500L)
+            }
+        })
+
+        dialog.show()
+        searchInput.requestFocus()
+    }
+
+    /** After a result is tapped, look up nearby car parks then proceed. */
+    private fun fetchCarParksAndSelect(result: HillSearchService.HillResult) {
+        sheetTitle.text = "Finding car parks…"
+        Thread {
+            // Retry once on failure — first-run cold-network timeouts are common
+            var parks = try { HillSearchService.findNearbyCarParks(result.lat, result.lon) }
+                        catch (e: Exception) { emptyList() }
+            if (parks.isEmpty()) {
+                parks = try { HillSearchService.findNearbyCarParks(result.lat, result.lon) }
+                        catch (e: Exception) { emptyList() }
+            }
+            runOnUiThread {
+                when {
+                    parks.isEmpty() -> {
+                        // No Overpass data — use the hill/route coordinates as a navigation target
+                        onHillSelected(result, CarPark("${result.name} area", result.lat, result.lon))
+                    }
+                    parks.size == 1 -> onHillSelected(result, parks[0])
+                    else -> {
+                        val top    = parks.take(8)
+                        val labels = top.map { cp ->
+                            val dist = haversine(result.lat, result.lon, cp.lat, cp.lon)
+                            val distStr = if (dist < 1000) "${dist.toInt()} m"
+                                          else "${"%.1f".format(dist / 1000)} km"
+                            val bearing = carParkBearing(result.lat, result.lon, cp.lat, cp.lon)
+                            val areaStr = if (cp.area.isNotEmpty()) ", ${cp.area}" else ""
+                            "${cp.name}$areaStr · $bearing $distStr"
+                        }.toTypedArray()
+                        AlertDialog.Builder(this)
+                            .setTitle("Select start car park")
+                            .setItems(labels) { _, i -> onHillSelected(result, top[i]) }
+                            .setNegativeButton("Nearest") { _, _ -> onHillSelected(result, top[0]) }
+                            .show()
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun onHillSelected(result: HillSearchService.HillResult, carPark: CarPark?) {
+        selectedHill    = result
+        selectedCarPark = carPark
+
+        // Centre map on the summit immediately (no animation to avoid conflicts with arriveAtCarPark)
+        map.controller.setZoom(13.0)
+        map.controller.setCenter(GeoPoint(result.lat, result.lon))
+
+        if (carPark == null) {
+            navPhase = NavPhase.HILL_NAV
+            tapPoints.add(GeoPoint(result.lat, result.lon))
+            tapMarkers.add(addMarker(GeoPoint(result.lat, result.lon), result.name, 0xFFC62828.toInt()))
+            updateSheetForNoRoute()
+            Toast.makeText(this, "Tap your start point on the map.", Toast.LENGTH_LONG).show()
+            map.invalidate()
+            return
+        }
+
+        val loc = lastLocation
+        val distToCarPark = if (loc != null)
+            haversine(loc.latitude, loc.longitude, carPark.lat, carPark.lon)
+        else
+            Double.MAX_VALUE
+
+        if (distToCarPark > CARPARK_ARRIVAL_M) {
+            // User is not at the car park yet — offer road navigation
+            val message = if (carPark.navLat != null) {
+                val ferryTo   = carPark.name.substringBefore(" (ferry").trim()
+                val ferryFrom = carPark.name.substringAfterLast("from ").removeSuffix(")").trim()
+                "Drive to $ferryFrom and take the ferry to $ferryTo.\n\nNavigate to $ferryFrom now?"
+            } else {
+                "Head to ${carPark.name} to start your walk.\n\nOpen navigation now?"
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Navigate to ${result.name}")
+                .setMessage(message)
+                .setPositiveButton("Navigate") { _, _ ->
+                    launchRoadNavigation(carPark)
+                    enterDrivingPhase(result, carPark)
+                }
+                .setNegativeButton("I'm Already There") { _, _ ->
+                    arriveAtCarPark()
+                }
+                .show()
+        } else {
+            // Already at (or near) the car park
+            arriveAtCarPark()
+        }
+    }
+
+    /** Launch turn-by-turn navigation to the car park (or ferry terminal if ferry access). */
+    private fun launchRoadNavigation(carPark: CarPark) {
+        // For ferry destinations, navigate to the mainland terminal, not the island start
+        val navLat  = carPark.navLat ?: carPark.lat
+        val navLon  = carPark.navLon ?: carPark.lon
+        val navName = if (carPark.navLat != null)
+            carPark.name.substringAfterLast("from ").removeSuffix(")").trim().ifEmpty { carPark.name }
+        else carPark.name
+
+        // geo: URI — handled by Google Maps, OsmAnd, Waze and most mapping apps
+        try {
+            val uri = Uri.parse("geo:$navLat,$navLon?q=$navLat,$navLon(${Uri.encode(navName)})")
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+            return
+        } catch (e: ActivityNotFoundException) { /* fall through */ }
+
+        // Last resort: open Google Maps directions URL in browser
+        try {
+            val url = "https://maps.google.com/maps?daddr=$navLat,$navLon&directionsmode=driving"
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(this,
+                "No navigation app found. Head to: $navName",
+                Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun enterDrivingPhase(result: HillSearchService.HillResult, carPark: CarPark) {
+        navPhase = NavPhase.DRIVING_TO_CARPARK
+        val label = driveBanner.findViewById<TextView>(android.R.id.text1)
+        val destination = if (carPark.navLat != null) {
+            // Ferry access: show the mainland departure terminal name
+            carPark.name.substringAfterLast("from ").removeSuffix(")").trim()
+                .ifEmpty { carPark.name }
+        } else carPark.name
+        label?.text = "Driving to $destination  •  ${result.name}"
+        driveBanner.visibility = View.VISIBLE
+    }
+
+    private fun checkCarParkArrival(loc: Location) {
+        val cp = selectedCarPark ?: return
+        // Ferry destinations require the user to manually tap "I'm Here" after crossing
+        if (cp.navLat != null) return
+        val dist = haversine(loc.latitude, loc.longitude, cp.lat, cp.lon)
+        if (dist <= CARPARK_ARRIVAL_M) arriveAtCarPark()
+    }
+
+    /** Called when the user arrives at the car park (auto-detected or manual). */
+    private fun arriveAtCarPark() {
+        // Save references before clearRoutes() nullifies them
+        val hill = selectedHill ?: return
+        val cp   = selectedCarPark
+
+        // Clear any previous route/markers without resetting hill selection
+        tapPoints.clear()
+        tapMarkers.forEach { map.overlays.remove(it) }
+        tapMarkers.clear()
+        routeCandidates.clear(); activeIndex = 0
+        routeOverlay.clear()
+        routeIndex = null; elevationProfile = null; progressMeters = 0.0
+        offTrackCount = 0; lastOffTrackAnnounce = 0L
+        voiceNavigator.clearInstructions()
+        routeSelectorRow.removeAllViews()
+        routeSelectorRow.visibility = View.GONE
+
+        // Restore hill state and switch to hill navigation phase
+        selectedHill    = hill
+        selectedCarPark = cp
+        navPhase        = NavPhase.HILL_NAV
+        driveBanner.visibility = View.GONE
+
+        val summitPt = GeoPoint(hill.lat, hill.lon)
+
+        // Position map immediately (no animation) so markers are visible right away
+        val midLat = if (cp != null) (cp.lat + hill.lat) / 2.0 else hill.lat
+        val midLon = if (cp != null) (cp.lon + hill.lon) / 2.0 else hill.lon
+        map.controller.setZoom(13.0)
+        map.controller.setCenter(GeoPoint(midLat, midLon))
+
+        // A synthetic car park is created at (hill.lat, hill.lon) when Overpass finds nothing.
+        // Placing start at the same coords as the summit would overlap the pins and produce a
+        // zero-length route, so treat that case the same as having no car park at all.
+        val cpIsAtSummit = cp != null &&
+            Math.abs(cp.lat - hill.lat) < 0.0001 &&
+            Math.abs(cp.lon - hill.lon) < 0.0001
+
+        // Determine the start point: prefer car park, then GPS, then ask user to tap
+        val gpsPt = lastLocation?.let { GeoPoint(it.latitude, it.longitude) }
+        val startPt = when {
+            cp != null && !cpIsAtSummit -> GeoPoint(cp.lat, cp.lon)   // real car park
+            gpsPt != null               -> gpsPt                        // GPS location
+            else                        -> null                         // nothing — ask user
+        }
+
+        if (startPt != null) {
+            // Add start pin first, then summit — tapPoints[0]=start, tapPoints[1]=summit
+            tapPoints.add(startPt)
+            tapMarkers.add(addMarker(startPt, "Start", 0xFF2E7D32.toInt()))
+            tapPoints.add(summitPt)
+            tapMarkers.add(addMarker(summitPt, hill.name, 0xFFC62828.toInt()))
+            // Centre map between both pins
+            val centerLat = (startPt.latitude  + hill.lat) / 2.0
+            val centerLon = (startPt.longitude + hill.lon) / 2.0
+            map.controller.setCenter(GeoPoint(centerLat, centerLon))
+            map.invalidate()
+            buildRoutes()
+        } else {
+            // No car park and no GPS — place summit pin only and ask user to tap their start
+            tapPoints.add(summitPt)
+            tapMarkers.add(addMarker(summitPt, hill.name, 0xFFC62828.toInt()))
+            map.invalidate()
+            updateSheetForNoRoute()
+            Toast.makeText(this, "Tap your start point on the map.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun toggleVoiceMute() {
+        voiceNavigator.muted = !voiceNavigator.muted
+        voiceFab.setImageResource(
+            if (voiceNavigator.muted)
+                android.R.drawable.ic_lock_silent_mode        // muted
+            else
+                android.R.drawable.ic_lock_silent_mode_off    // active
+        )
+        if (!voiceNavigator.muted) {
+            voiceNavigator.speakNow("Voice navigation on.")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == SPEECH_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
+            val spoken = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull() ?: return
+            pendingVoiceTarget?.apply {
+                setText(spoken)
+                setSelection(spoken.length)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        voiceNavigator.shutdown()
+    }
+
+}

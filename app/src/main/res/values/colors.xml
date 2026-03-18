@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Brand / Navigation -->
+    <color name="nav_orange">#E87722</color>
+
+    <!-- Storm / Munro palette -->
+    <color name="storm_background">#2E3338</color>
+    <color name="storm_rock">#4A4E52</color>
+    <color name="storm_mist_light">#BFC4C8</color>
+    <color name="storm_mist_dark">#8E9499</color>
+
+    <!-- Material-required fallbacks -->
+    <color name="colorPrimary">#2E3338</color>
+    <color name="colorSecondary">#E87722</color>
+
+</resources>
