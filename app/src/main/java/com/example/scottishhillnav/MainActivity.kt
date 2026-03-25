@@ -87,6 +87,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bottomSheetBehavior: BottomSheetBehavior<FrameLayout>
     private lateinit var sheetTitle: TextView
     private lateinit var sheetSubtitle: TextView
+    private lateinit var hillPronounceBtn: TextView
     private lateinit var statDistance: TextView
     private lateinit var statAscent: TextView
     private lateinit var statTime: TextView
@@ -353,6 +354,27 @@ class MainActivity : AppCompatActivity() {
         sheetTitle = TextView(this).apply {
             textSize = 18f; setTextColor(Color.WHITE); text = "Route: —"
         }
+        hillPronounceBtn = TextView(this).apply {
+            text = "🔊"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            val p = (resources.displayMetrics.density * 10).toInt()
+            setPadding(p, p, p, p)
+            isClickable = true
+            isFocusable = true
+            visibility = View.GONE
+            setOnClickListener {
+                val hill = selectedHill ?: return@setOnClickListener
+                val phonetic = GaelicPronouncer.phonetic(hill.name)
+                voiceNavigator.pronounce(phonetic)
+                val display = if (phonetic != hill.name) "$phonetic\n(${hill.name})" else hill.name
+                Toast.makeText(this@MainActivity, display, Toast.LENGTH_LONG).show()
+            }
+        }
+        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        titleRow.addView(sheetTitle, LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        titleRow.addView(hillPronounceBtn)
         sheetSubtitle = TextView(this).apply {
             textSize = 13.5f; setTextColor(0xFFBDBDBD.toInt())
             text = "Tap to cycle routes • Long-press to clear"
@@ -398,7 +420,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         sheetContent.addView(handle)
-        sheetContent.addView(sheetTitle)
+        sheetContent.addView(titleRow)
         sheetContent.addView(sheetSubtitle)
         sheetContent.addView(routeSelectorRow)
         sheetContent.addView(primaryRow)
@@ -1591,6 +1613,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateSheetForNoRoute() {
         sheetTitle.text    = selectedHill?.let { "To: ${it.name}" } ?: "Route: —"
+        hillPronounceBtn.visibility = if (selectedHill != null) View.VISIBLE else View.GONE
         sheetSubtitle.text = when {
             navPhase == NavPhase.HILL_NAV && tapPoints.size == 1 ->
                 "Tap your start point on the map"
@@ -1616,6 +1639,7 @@ class MainActivity : AppCompatActivity() {
         val time = if (h > 0) "${h}h ${min}m" else "${min}m"
 
         sheetTitle.text    = r.name
+        hillPronounceBtn.visibility = if (selectedHill != null) View.VISIBLE else View.GONE
         sheetSubtitle.text = "${r.shortDescription}   •   Tap ℹ for live stats"
         statDistance.text  = "Distance\n%.1f km".format(m.distanceMeters / 1000.0)
         statAscent.text    = "Ascent\n%.0f m".format(m.ascentMeters)
