@@ -34,9 +34,12 @@ object HillSearchService {
     // Ben Lomond summit — used to detect Ben Lomond queries and apply east-bank-only filter
     private const val BEN_LOMOND_LAT = 56.1902
     private const val BEN_LOMOND_LON = -4.6340
-    // Rowardennan car park — primary trailhead for Ben Lomond (end of the east-bank road)
-    private const val ROWARDENNAN_LAT = 56.1565
-    private const val ROWARDENNAN_LON = -4.6372
+    // Rowardennan car park — primary trailhead for Ben Lomond.
+    // Coordinates match the first point of both WalkHighlands GPX files so the car park
+    // snaps to the same graph node as ben_lomond_tourist_start / ben_lomond_ptarmigan_start,
+    // eliminating the lochside access leg that made the route appear to start in the wrong place.
+    private const val ROWARDENNAN_LAT = 56.1525
+    private const val ROWARDENNAN_LON = -4.6431
 
     fun clearCache() = carParkCache.clear()
 
