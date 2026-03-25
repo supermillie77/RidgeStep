@@ -105,18 +105,14 @@ class VoiceNavigator(context: Context) : TextToSpeech.OnInitListener {
 
     /**
      * Pronounce a name on user request — always speaks even when navigation is muted.
-     * If TTS hasn't initialised yet, queues the text to speak as soon as it's ready.
+     * Calls tts.speak() unconditionally; Android TTS returns ERROR (no crash) if not
+     * yet initialised, so we don't need to gate on ttsInitialized here.
      */
     fun pronounce(text: String) {
-        if (!ttsInitialized) {
-            // onInit hasn't fired yet — queue so it speaks the moment TTS is ready
-            pendingSpeak = text
-            return
-        }
         try {
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "pronounce")
         } catch (e: Exception) {
-            Log.w(TAG, "TTS speak failed: ${e.message}")
+            Log.w(TAG, "TTS pronounce failed: ${e.message}")
         }
     }
 
