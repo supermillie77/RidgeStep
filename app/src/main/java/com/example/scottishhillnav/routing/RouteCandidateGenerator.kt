@@ -19,8 +19,8 @@ class RouteCandidateGenerator(
 
         val candidates = mutableListOf<RouteCandidate>()
 
-        // Tourist Path — use curated landmarks if present, otherwise direct walk
-        val tourist = buildCuratedStrictAccess(
+        // Ben Nevis — Tourist Path (GPX sequence if imported, otherwise null — no spurious fallback)
+        buildCuratedStrictAccess(
             id = "tourist",
             familyId = "tourist_family",
             name = "Tourist Path",
@@ -29,8 +29,7 @@ class RouteCandidateGenerator(
             endKey = "tourist_end",
             startId = startId,
             endId = endId
-        ) ?: buildDirectWalkCandidate(startId, endId)
-        tourist?.let { candidates.add(it) }
+        )?.let { candidates.add(it) }
 
         // CMD Arête (GPX import)
         buildCuratedStrictAccess(
@@ -55,6 +54,35 @@ class RouteCandidateGenerator(
             startId = startId,
             endId = endId
         )?.let { candidates.add(it) }
+
+        // Ben Lomond — Tourist Route (South Ridge path)
+        buildCuratedStrictAccess(
+            id = "lomond_tourist",
+            familyId = "lomond_tourist_family",
+            name = "Tourist Route",
+            description = "South Ridge Tourist Path",
+            startKey = "ben_lomond_tourist_start",
+            endKey = "ben_lomond_tourist_end",
+            startId = startId,
+            endId = endId
+        )?.let { candidates.add(it) }
+
+        // Ben Lomond — Ptarmigan Route
+        buildCuratedStrictAccess(
+            id = "lomond_ptarmigan",
+            familyId = "lomond_ptarmigan_family",
+            name = "Ptarmigan Route",
+            description = "Ptarmigan Ridge",
+            startKey = "ben_lomond_ptarmigan_start",
+            endKey = "ben_lomond_ptarmigan_end",
+            startId = startId,
+            endId = endId
+        )?.let { candidates.add(it) }
+
+        // If no curated routes were found, fall back to a direct walk
+        if (candidates.isEmpty()) {
+            buildDirectWalkCandidate(startId, endId)?.let { candidates.add(it) }
+        }
 
         return candidates
     }
@@ -205,12 +233,16 @@ class RouteCandidateGenerator(
             return null
         }
 
-        // Always build curated core (deterministic)
-        val curatedCore = router.route(routeStartId, routeEndId)
-        if (curatedCore == null) {
-            Log.w(TAG, "Curated core failed for $id: $routeStartId -> $routeEndId. Candidate dropped.")
-            return null
-        }
+        // Use stored GPX sequence as the curated core when available — this guarantees each
+        // named route follows its own track even when two routes share start/end nodes
+        // (e.g. Ben Lomond Tourist & Ptarmigan both snap to the same start/end coordinates).
+        // Fall back to A* for routes without a stored sequence (e.g. Ben Nevis Tourist Path).
+        val coreNodeIds: List<Int> = graph.routeSequences[id]
+            ?: router.route(routeStartId, routeEndId)?.nodeIds
+            ?: run {
+                Log.w(TAG, "Curated core failed for $id: $routeStartId -> $routeEndId. Candidate dropped.")
+                return null
+            }
 
         // Access legs MUST exist (locked philosophy)
         val accessToRoute = router.route(startId, routeStartId)
@@ -227,14 +259,14 @@ class RouteCandidateGenerator(
 
         val fullPath =
             accessToRoute.nodeIds.dropLast(1) +
-                curatedCore.nodeIds.dropLast(1) +
+                coreNodeIds.dropLast(1) +
                 accessToEnd.nodeIds
 
         val metrics = metricsCalculator.calculate(fullPath)
 
-        // Difficulty should be based on the curated core, not the access legs
+        // Difficulty based on the curated core, not the access legs
         val difficultyProfile = DifficultyProfile(
-            p95Slope = computeP95Slope(curatedCore.nodeIds)
+            p95Slope = computeP95Slope(coreNodeIds)
         )
 
         return RouteCandidate(

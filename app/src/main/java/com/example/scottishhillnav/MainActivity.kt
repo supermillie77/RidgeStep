@@ -32,10 +32,12 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.app.ActivityCompat
+import com.example.scottishhillnav.DemProvider
 import com.example.scottishhillnav.hills.CarPark
 import com.example.scottishhillnav.hills.HillSearchService
 import com.example.scottishhillnav.hills.HillSuggestionService
 import com.example.scottishhillnav.navigation.ElevationProfileModel
+import com.example.scottishhillnav.navigation.GaelicPronouncer
 import com.example.scottishhillnav.navigation.InstructionGenerator
 import com.example.scottishhillnav.navigation.OsGridRef
 import com.example.scottishhillnav.navigation.RouteIndex
@@ -66,6 +68,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var map: MapView
     private lateinit var graph: Graph           // active drawing/navigation graph (may include Overpass data)
     private lateinit var bundledGraph: Graph    // original bundled graph — never mutated, used for coverage checks
+    private lateinit var bundledRouter: AStarRouter  // router anchored to bundledGraph — never replaced
     private lateinit var router: AStarRouter
     private lateinit var metricsCalculator: RouteMetricsCalculator
     private lateinit var candidateGenerator: RouteCandidateGenerator
@@ -118,7 +121,16 @@ class MainActivity : AppCompatActivity() {
     private var navPhase         = NavPhase.IDLE
     private var selectedHill     : HillSearchService.HillResult? = null
     private var selectedCarPark  : CarPark? = null
+    /** Route ID from the pre-selection picker (e.g. "lomond_tourist"). Null = no preference. */
+    private var preferredRouteId : String? = null
     private lateinit var driveBanner: FrameLayout  // shown while driving to car park
+
+    /** A known named route entry in the pre-selection catalogue. */
+    private data class CatalogueRoute(
+        val id: String,           // matches RouteCandidate.id
+        val name: String,
+        val description: String
+    )
 
     private companion object {
         const val OFF_TRACK_THRESHOLD_M  = 50.0    // metres before considered off route
@@ -130,6 +142,22 @@ class MainActivity : AppCompatActivity() {
         // Ben Nevis summit — used to decide whether curated routes apply
         const val BEN_NEVIS_LAT = 56.7969
         const val BEN_NEVIS_LON = -5.0035
+        // Ben Lomond summit
+        const val BEN_LOMOND_LAT = 56.1904
+        const val BEN_LOMOND_LON = -4.6345
+
+        /** Known named routes per hill (case-insensitive hill name key). */
+        val ROUTE_CATALOGUE: Map<String, List<CatalogueRoute>> = mapOf(
+            "ben lomond" to listOf(
+                CatalogueRoute("lomond_tourist",   "Tourist Route",   "South Ridge — most popular path"),
+                CatalogueRoute("lomond_ptarmigan", "Ptarmigan Route", "Ptarmigan Ridge — wilder approach")
+            ),
+            "ben nevis" to listOf(
+                CatalogueRoute("tourist", "Tourist Path",  "Main Mountain Track"),
+                CatalogueRoute("cmd",     "CMD Arête",     "Carn Mòr Dearg Arête — scramble"),
+                CatalogueRoute("ledge",   "Ledge Route",   "North Face — experienced only")
+            )
+        )
     }
 
 
@@ -161,8 +189,10 @@ class MainActivity : AppCompatActivity() {
             osmdroidTileCache = java.io.File(cacheDir, "osmdroid")
         }
 
+        DemProvider.init(this)
         graph = GraphStore.load(this)
         bundledGraph = graph   // keep permanent reference — never reassigned
+        bundledRouter = AStarRouter(bundledGraph)   // never replaced
         router = AStarRouter(graph)
         metricsCalculator = RouteMetricsCalculator(graph)
         candidateGenerator = RouteCandidateGenerator(graph, router, metricsCalculator)
@@ -590,7 +620,7 @@ class MainActivity : AppCompatActivity() {
                 textSize = 20f
                 setPadding((dp * 8).toInt(), 0, 0, 0)
                 setOnClickListener {
-                    val spoke = voiceNavigator.pronounce(hill.name)
+                    val spoke = voiceNavigator.pronounce(GaelicPronouncer.phonetic(hill.name))
                     Toast.makeText(
                         this@MainActivity,
                         if (spoke) hill.name
@@ -752,14 +782,101 @@ class MainActivity : AppCompatActivity() {
                 map.overlays.remove(destMarker)
 
                 tapPoints.add(p)
-                tapMarkers.add(addMarker(p, "Waypoint ${tapPoints.size - 1}", 0xFF1565C0.toInt()))
+                val wpLabel = "Waypoint ${tapPoints.size - 1}"
+                tapMarkers.add(addMarker(p, wpLabel, 0xFF1565C0.toInt()))
 
                 tapPoints.add(destPoint)
                 tapMarkers.add(addMarker(destPoint, "Destination", 0xFFC62828.toInt()))
 
+                // Immediate feedback if the waypoint is far from any mapped path
+                warnIfWaypointOffPath(p, wpLabel)
+
                 buildRoutes()
             }
         }
+    }
+
+    /**
+     * Immediate check when a waypoint is tapped: if the tap is far from any connected
+     * graph node, show a brief toast so the user knows before the route is drawn.
+     * Runs on the UI thread; uses a small node pool so it stays fast.
+     */
+    private fun warnIfWaypointOffPath(p: GeoPoint, label: String) {
+        val nearestIds = nearestConnectedNodeIds(p.latitude, p.longitude, 1, pool = 50)
+        val nearestNode = nearestIds.firstOrNull()?.let { graph.nodes[it] } ?: return
+        val dist = haversine(p.latitude, p.longitude, nearestNode.lat, nearestNode.lon)
+        if (dist > 250.0) {
+            val distStr = if (dist < 1000) "${dist.toInt()} m" else "${"%.1f".format(dist / 1000)} km"
+            Toast.makeText(
+                this,
+                "$label is ${distStr} from the nearest mapped path — routing may not pass nearby",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    /**
+     * Post-route check: for every intermediate waypoint, measure how far the final
+     * route actually passes from it.  If any waypoint is bypassed by more than 200 m,
+     * show a dialog explaining that the area may lack safe mapped paths.
+     * Must be called on the UI thread after [routeCandidates] is populated.
+     */
+    private fun checkWaypointsOnRoute() {
+        if (tapPoints.size < 3) return   // No intermediate waypoints
+        val candidate = routeCandidates.getOrNull(activeIndex) ?: return
+        val routeNodes = candidate.nodeIds.mapNotNull { graph.nodes[it] }
+        if (routeNodes.isEmpty()) return
+
+        // Pair<label, distanceMeters> for each bypassed waypoint
+        val warnings = mutableListOf<Pair<String, Double>>()
+
+        // tapPoints[0]=start, tapPoints[last]=destination — check everything between
+        for (i in 1 until tapPoints.size - 1) {
+            val wp = tapPoints[i]
+            var minDist = Double.MAX_VALUE
+            for (n in routeNodes) {
+                val d = haversine(wp.latitude, wp.longitude, n.lat, n.lon)
+                if (d < minDist) {
+                    minDist = d
+                    if (minDist < 200.0) break   // Close enough — skip
+                }
+            }
+            if (minDist > 200.0) {
+                warnings.add(Pair("Waypoint $i", minDist))
+            }
+        }
+
+        if (warnings.isEmpty()) return
+
+        val routeName = routeCandidates.getOrNull(activeIndex)?.name ?: "the route"
+        val body = buildString {
+            warnings.forEach { (label, distM) ->
+                val distStr = if (distM < 1000) "${distM.toInt()} m"
+                              else "${"%.1f".format(distM / 1000)} km"
+                append("• $label is $distStr from the nearest point on $routeName\n")
+            }
+            append("\nThis area has no mapped paths — it may not be safe or accessible. ")
+            append("The route follows the nearest available path instead.")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Waypoint${if (warnings.size > 1) "s" else ""} off route")
+            .setMessage(body.trim())
+            .setPositiveButton("Keep waypoint") { _, _ -> /* leave as-is */ }
+            .setNegativeButton("Remove it") { _, _ ->
+                // Remove the first bypassed waypoint and rebuild
+                val firstIdx = warnings.firstOrNull()?.first
+                    ?.removePrefix("Waypoint ")?.toIntOrNull()
+                    ?: return@setNegativeButton
+                if (firstIdx in 1 until tapPoints.size - 1) {
+                    tapPoints.removeAt(firstIdx)
+                    val marker = tapMarkers.removeAt(firstIdx)
+                    map.overlays.remove(marker)
+                    if (tapPoints.size >= 2) buildRoutes()
+                    map.invalidate()
+                }
+            }
+            .show()
     }
 
     private fun buildRoutes() {
@@ -771,12 +888,22 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val found = buildRouteForPoints(points)
+                try {
+                    enrichRouteElevations(found)   // file I/O — non-critical, never blocks route display
+                } catch (_: Exception) { /* elevation enrichment failed — routes still shown */ }
                 runOnUiThread {
                     routeCandidates += found
                     if (routeCandidates.isEmpty()) {
                         sheetTitle.text = "No route found"
                     } else {
+                        // Select preferred route if the user picked one before the car park
+                        val pref = preferredRouteId
+                        if (pref != null) {
+                            val idx = routeCandidates.indexOfFirst { it.id == pref }
+                            if (idx >= 0) activeIndex = idx
+                        }
                         drawActiveRoute(); buildNavigationIndex(); updateSheetForActiveRoute()
+                        checkWaypointsOnRoute()
                     }
                     map.invalidate()
                 }
@@ -787,6 +914,31 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }.start()
+    }
+
+    /**
+     * Called on the background routing thread after a route is built.
+     * Looks up SRTM elevation for every route node that still has elevation == 0.0
+     * (Overpass nodes and V0-pack bundled nodes) and updates graph in-place so that
+     * RouteGradientOverlay.draw() never needs to do RandomAccessFile I/O on the UI thread.
+     */
+    private fun enrichRouteElevations(candidates: List<RouteCandidate>) {
+        val allIds = candidates.flatMap { it.nodeIds }.distinct()
+        val enriched = graph.nodes.toMutableMap()
+        var anyChanged = false
+        for (id in allIds) {
+            val n = enriched[id] ?: continue
+            if (n.elevation == 0.0) {
+                val elev = DemProvider.getElevation(n.lat, n.lon)
+                if (elev != 0.0) { enriched[id] = n.copy(elevation = elev); anyChanged = true }
+            }
+        }
+        if (anyChanged) {
+            graph             = Graph(nodes = enriched, edges = graph.edges, landmarks = graph.landmarks)
+            router            = AStarRouter(graph)
+            metricsCalculator = RouteMetricsCalculator(graph)
+            candidateGenerator = RouteCandidateGenerator(graph, router, metricsCalculator)
+        }
     }
 
     /**
@@ -836,17 +988,38 @@ class MainActivity : AppCompatActivity() {
 
             val overpassGraph = try {
                 OverpassGraphBuilder.buildForArea(midLat, midLon, radius)
-            } catch (e: Exception) {
-                return emptyList()
-            } ?: return emptyList()
+            } catch (e: Exception) { null }
+
+            val VSTART = -1
+            val VEND   = -2
+
+            // If Overpass is unavailable or returns no data, give the user a straight-line
+            // route so the map always shows something between their two pins.
+            if (overpassGraph == null) {
+                val fbNodes = graph.nodes.toMutableMap()
+                fbNodes[VSTART] = Node(start.latitude, start.longitude, 0.0)
+                fbNodes[VEND]   = Node(end.latitude,   end.longitude,   0.0)
+                val fbEdges = graph.edges.toMutableMap()
+                val fbDist  = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
+                fbEdges[VSTART] = listOf(Edge(to = VEND, cost = fbDist, requiredMask = Capability.WALKING))
+                val fbGraph = Graph(nodes = fbNodes, edges = fbEdges, landmarks = graph.landmarks)
+                graph = fbGraph; router = AStarRouter(fbGraph)
+                metricsCalculator = RouteMetricsCalculator(fbGraph)
+                candidateGenerator = RouteCandidateGenerator(fbGraph, router, metricsCalculator)
+                return listOf(RouteCandidate(
+                    id = "direct", familyId = "direct_family", name = "Direct Route",
+                    shortDescription = "Straight line — map data unavailable",
+                    nodeIds = listOf(VSTART, VEND),
+                    metrics = metricsCalculator.calculate(listOf(VSTART, VEND)),
+                    difficultyProfile = DifficultyProfile(p95Slope = 0.0),
+                    warnings = emptyList(), isSelectable = true
+                ))
+            }
 
             // Snap start/end pins to the nearest path-network nodes with edges.
             // We connect VSTART and VEND to the 5 closest nodes each so that A*
             // can find the route even when the single nearest node happens to be
             // on a disconnected component (common where OSM has small highway-type gaps).
-            val VSTART = -1
-            val VEND   = -2
-
             val connectedEntries = overpassGraph.nodes.entries
                 .filter { overpassGraph.edges[it.key]?.isNotEmpty() == true }
             fun snapEdgesTo(pinLat: Double, pinLon: Double): List<Edge> =
@@ -860,7 +1033,28 @@ class MainActivity : AppCompatActivity() {
 
             val startSnaps = snapEdgesTo(start.latitude, start.longitude)
             val endSnaps   = snapEdgesTo(end.latitude,   end.longitude)
-            if (startSnaps.isEmpty() || endSnaps.isEmpty()) return emptyList()
+
+            // No nearby path nodes at all — straight-line fallback
+            if (startSnaps.isEmpty() || endSnaps.isEmpty()) {
+                val fbNodes = graph.nodes.toMutableMap()
+                fbNodes[VSTART] = Node(start.latitude, start.longitude, 0.0)
+                fbNodes[VEND]   = Node(end.latitude,   end.longitude,   0.0)
+                val fbEdges = graph.edges.toMutableMap()
+                val fbDist  = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
+                fbEdges[VSTART] = listOf(Edge(to = VEND, cost = fbDist, requiredMask = Capability.WALKING))
+                val fbGraph = Graph(nodes = fbNodes, edges = fbEdges, landmarks = graph.landmarks)
+                graph = fbGraph; router = AStarRouter(fbGraph)
+                metricsCalculator = RouteMetricsCalculator(fbGraph)
+                candidateGenerator = RouteCandidateGenerator(fbGraph, router, metricsCalculator)
+                return listOf(RouteCandidate(
+                    id = "direct", familyId = "direct_family", name = "Direct Route",
+                    shortDescription = "Straight line — no paths mapped in this area",
+                    nodeIds = listOf(VSTART, VEND),
+                    metrics = metricsCalculator.calculate(listOf(VSTART, VEND)),
+                    difficultyProfile = DifficultyProfile(p95Slope = 0.0),
+                    warnings = emptyList(), isSelectable = true
+                ))
+            }
 
             val snapNodes = (bundledGraph.nodes + overpassGraph.nodes).toMutableMap()
             snapNodes[VSTART] = Node(start.latitude, start.longitude, 0.0)
@@ -950,12 +1144,22 @@ class MainActivity : AppCompatActivity() {
             ))
         }
 
-        // Only attempt curated Ben Nevis routes (Tourist Path, CMD Arête, Ledge Route)
-        // when the start AND end are actually near Ben Nevis (within 15 km of the summit).
+        // Re-anchor to the bundled graph. A previous Overpass route may have promoted
+        // graph/router to a remote-area graph; using those stale objects with bundled-graph
+        // node IDs would make A* fail and silently degrade to a straight-line route.
+        graph              = bundledGraph
+        router             = bundledRouter
+        metricsCalculator  = RouteMetricsCalculator(bundledGraph)
+        candidateGenerator = RouteCandidateGenerator(bundledGraph, bundledRouter, metricsCalculator)
+
+        // Attempt curated routes when start AND end are near a supported mountain.
         val nearBenNevis =
             haversine(start.latitude, start.longitude, BEN_NEVIS_LAT, BEN_NEVIS_LON) < 15_000.0 &&
             haversine(end.latitude,   end.longitude,   BEN_NEVIS_LAT, BEN_NEVIS_LON) < 15_000.0
-        if (nearBenNevis && sId != eId) {
+        val nearBenLomond =
+            haversine(start.latitude, start.longitude, BEN_LOMOND_LAT, BEN_LOMOND_LON) < 15_000.0 &&
+            haversine(end.latitude,   end.longitude,   BEN_LOMOND_LAT, BEN_LOMOND_LON) < 15_000.0
+        if ((nearBenNevis || nearBenLomond) && sId != eId) {
             for (s in startIds) {
                 for (e in endIds) {
                     val c = candidateGenerator.generateCuratedCandidates(s, e)
@@ -983,9 +1187,69 @@ class MainActivity : AppCompatActivity() {
             ))
         }
 
-        // ── Bundled-graph straight-line fallback ─────────────────────────────
-        // A* failed on the bundled graph (or sId==eId). Add virtual pins to the
-        // current graph and return a direct line so the user always gets a route.
+        // ── Overpass retry when bundled A* fails ─────────────────────────────
+        // Bundled graph may have road/settlement nodes near both endpoints but not
+        // the mountain footpath (e.g. Ben Lomond: B837 road is in the pack but the
+        // Rowardennan–summit path is a different connected component). Try Overpass
+        // before giving up so the user always gets a real walking route.
+        runOnUiThread { sheetTitle.text = "Downloading map data…" }
+        val opMidLat = (start.latitude + end.latitude) / 2.0
+        val opMidLon = (start.longitude + end.longitude) / 2.0
+        val opDist   = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
+        val opRadius = (opDist / 2.0 + 4_000.0).toInt().coerceIn(8_000, 20_000)
+        val opGraph  = try { OverpassGraphBuilder.buildForArea(opMidLat, opMidLon, opRadius) }
+                       catch (_: Exception) { null }
+        if (opGraph != null) {
+            val opConnected = opGraph.nodes.entries
+                .filter { opGraph.edges[it.key]?.isNotEmpty() == true }
+            fun opSnap(pLat: Double, pLon: Double) = opConnected
+                .sortedBy { (_, n) -> haversine(pLat, pLon, n.lat, n.lon) }.take(5)
+                .map { (id, n) -> Edge(to = id, cost = haversine(pLat, pLon, n.lat, n.lon),
+                                       requiredMask = Capability.WALKING) }
+            val OPVS = -1; val OPVE = -2
+            val opSnapNodes = (bundledGraph.nodes + opGraph.nodes).toMutableMap()
+            opSnapNodes[OPVS] = Node(start.latitude, start.longitude, 0.0)
+            opSnapNodes[OPVE] = Node(end.latitude,   end.longitude,   0.0)
+            val opSnapEdges = (bundledGraph.edges + opGraph.edges).toMutableMap()
+            val opStartSnaps = opSnap(start.latitude, start.longitude)
+            val opEndSnaps   = opSnap(end.latitude,   end.longitude)
+            opSnapEdges[OPVS] = opStartSnaps
+            opEndSnaps.forEach { s ->
+                opSnapEdges[s.to] = (opSnapEdges[s.to] ?: emptyList()) +
+                    Edge(to = OPVE, cost = s.cost, requiredMask = Capability.WALKING)
+            }
+            val opSGraph  = Graph(nodes = opSnapNodes, edges = opSnapEdges,
+                                  landmarks = bundledGraph.landmarks,
+                                  routeSequences = bundledGraph.routeSequences)
+            val opResult  = AStarRouter(opSGraph).routeWithCapabilities(
+                OPVS, OPVE, Capability.ALL, emptySet(), emptySet()
+            )
+            if (opResult != null && opResult.nodeIds.size >= 2) {
+                graph = opSGraph; router = AStarRouter(opSGraph)
+                metricsCalculator  = RouteMetricsCalculator(opSGraph)
+                candidateGenerator = RouteCandidateGenerator(opSGraph, router, metricsCalculator)
+
+                // After gaining Overpass connectivity, try curated named routes again
+                // (e.g. Ben Lomond Tourist/Ptarmigan when bundled graph lacked footpath)
+                if (nearBenNevis || nearBenLomond) {
+                    val curatedViaOp = candidateGenerator.generateCuratedCandidates(OPVS, OPVE)
+                    if (curatedViaOp.isNotEmpty()) return curatedViaOp
+                }
+
+                return listOf(RouteCandidate(
+                    id = "direct", familyId = "direct_family", name = "Direct Route",
+                    shortDescription = "Best available path",
+                    nodeIds = opResult.nodeIds,
+                    metrics = metricsCalculator.calculate(opResult.nodeIds),
+                    difficultyProfile = DifficultyProfile(p95Slope = 0.0),
+                    warnings = emptyList(), isSelectable = true
+                ))
+            }
+        }
+
+        // ── Straight-line last-resort ─────────────────────────────────────────
+        // Both bundled A* and Overpass failed — draw a direct line so the user
+        // always sees something between their two pins.
         val VSTART = -1; val VEND = -2
         val fbNodes = graph.nodes.toMutableMap()
         fbNodes[VSTART] = Node(start.latitude, start.longitude, 0.0)
@@ -1021,11 +1285,55 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (!anyRemote) {
-            // All points in bundled-graph coverage — route segment-by-segment as before.
+            // Build snap graph as the union of bundled + active graph. This ensures:
+            //  a) Bundled road/path nodes are always present (handles straight-line fallback
+            //     where graph only contains virtual nodes -1/-2).
+            //  b) Any Overpass footpath nodes promoted into graph are also available,
+            //     allowing A* to route via downloaded mountain paths.
+            val snapNodes = (bundledGraph.nodes + graph.nodes).toMutableMap()
+            val snapEdges: MutableMap<Int, List<Edge>> = bundledGraph.edges.toMutableMap()
+            for ((k, v) in graph.edges) {
+                val existing = snapEdges[k]
+                snapEdges[k] = if (existing == null) v
+                               else existing + v.filter { e -> existing.none { x -> x.to == e.to } }
+            }
+
+            val virtualIds = points.mapIndexed { i, p ->
+                val vid = -(10 + i)
+                snapNodes[vid] = Node(p.latitude, p.longitude, 0.0)
+                // Snap to nearest connected node in the combined graph (Overpass footpaths
+                // + bundled roads). Skip virtual (negative) IDs from previous routes.
+                val pool = snapNodes.entries
+                    .filter { (id, _) -> id > 0 }
+                    .sortedBy { (_, n) -> haversine(p.latitude, p.longitude, n.lat, n.lon) }
+                    .take(60)
+                val nearIds = pool.filter { (id, _) -> snapEdges[id]?.isNotEmpty() == true }
+                    .take(5).map { it.key }
+                    .ifEmpty { pool.take(5).map { it.key } }
+                val snaps = nearIds.mapNotNull { nid ->
+                    val n = snapNodes[nid] ?: return@mapNotNull null
+                    Edge(to = nid, cost = haversine(p.latitude, p.longitude, n.lat, n.lon),
+                         requiredMask = Capability.WALKING)
+                }
+                snapEdges[vid] = snaps
+                for (s in snaps) {
+                    snapEdges[s.to] = (snapEdges[s.to] ?: emptyList()) +
+                        Edge(to = vid, cost = s.cost, requiredMask = Capability.WALKING)
+                }
+                vid
+            }
+
+            val snapGraph  = Graph(nodes = snapNodes, edges = snapEdges, landmarks = graph.landmarks)
+            val snapRouter = AStarRouter(snapGraph)
+
             val segments = mutableListOf<List<Int>>()
             for (i in 0 until points.size - 1) {
-                val fromIds = nearestConnectedNodeIds(points[i].latitude,   points[i].longitude,   5)
-                val toIds   = nearestConnectedNodeIds(points[i+1].latitude, points[i+1].longitude, 5)
+                val fromVid = virtualIds[i]
+                val toVid   = virtualIds[i + 1]
+
+                // Try curated candidates (Ben Nevis named routes) first
+                val fromIds = snapEdges[fromVid]?.map { it.to } ?: emptyList()
+                val toIds   = snapEdges[toVid]?.map   { it.to } ?: emptyList()
                 var seg: List<Int>? = null
                 outer@ for (sId in fromIds) {
                     for (eId in toIds) {
@@ -1033,14 +1341,31 @@ class MainActivity : AppCompatActivity() {
                         if (c.isNotEmpty()) { seg = c[0].nodeIds; break@outer }
                     }
                 }
+
+                // A* between virtual snap nodes
                 if (seg == null) {
-                    val sId = fromIds.firstOrNull() ?: return emptyList()
-                    val eId = toIds.firstOrNull()   ?: return emptyList()
-                    seg = router.routeWithCapabilities(sId, eId, Capability.ALL,
-                        emptySet(), emptySet())?.nodeIds ?: return emptyList()
+                    seg = snapRouter.routeWithCapabilities(
+                        fromVid, toVid, Capability.ALL, emptySet(), emptySet()
+                    )?.nodeIds
+                }
+
+                // Straight-line fallback — always produce a segment so the route stays visible
+                if (seg == null || seg.size < 2) {
+                    val dist = haversine(points[i].latitude, points[i].longitude,
+                                        points[i + 1].latitude, points[i + 1].longitude)
+                    snapEdges[fromVid] = (snapEdges[fromVid] ?: emptyList()) +
+                        Edge(to = toVid, cost = dist, requiredMask = Capability.WALKING)
+                    seg = listOf(fromVid, toVid)
                 }
                 segments.add(seg)
             }
+
+            // Promote snap graph so overlay and navigation resolve all virtual node IDs.
+            graph             = Graph(nodes = snapNodes, edges = snapEdges, landmarks = graph.landmarks)
+            router            = AStarRouter(graph)
+            metricsCalculator = RouteMetricsCalculator(graph)
+            candidateGenerator = RouteCandidateGenerator(graph, router, metricsCalculator)
+
             val fullPath = segments.fold(listOf<Int>()) { acc, seg ->
                 if (acc.isEmpty()) seg else acc.dropLast(1) + seg
             }
@@ -1071,7 +1396,37 @@ class MainActivity : AppCompatActivity() {
 
         val overpassGraph = try {
             OverpassGraphBuilder.buildForArea(midLat, midLon, radius)
-        } catch (e: Exception) { return emptyList() } ?: return emptyList()
+        } catch (e: Exception) { null }
+
+        // If Overpass unavailable, build a straight-line route through all waypoints.
+        if (overpassGraph == null) {
+            val fbNodes = graph.nodes.toMutableMap()
+            val fbEdges = graph.edges.toMutableMap()
+            val vIds = points.mapIndexed { i, p ->
+                val vid = -(10 + i)
+                fbNodes[vid] = Node(p.latitude, p.longitude, 0.0)
+                vid
+            }
+            for (i in 0 until points.size - 1) {
+                val d = haversine(points[i].latitude, points[i].longitude,
+                                  points[i + 1].latitude, points[i + 1].longitude)
+                fbEdges[vIds[i]] = listOf(Edge(to = vIds[i + 1], cost = d, requiredMask = Capability.WALKING))
+                fbEdges[vIds[i + 1]] = (fbEdges[vIds[i + 1]] ?: emptyList()) +
+                    Edge(to = vIds[i], cost = d, requiredMask = Capability.WALKING)
+            }
+            val fbGraph = Graph(nodes = fbNodes, edges = fbEdges, landmarks = graph.landmarks)
+            graph = fbGraph; router = AStarRouter(fbGraph)
+            metricsCalculator = RouteMetricsCalculator(fbGraph)
+            candidateGenerator = RouteCandidateGenerator(fbGraph, router, metricsCalculator)
+            val wps = points.size - 2
+            return listOf(RouteCandidate(
+                id = "waypoint_route", familyId = "waypoint_family", name = "Custom Route",
+                shortDescription = "Via $wps waypoint${if (wps != 1) "s" else ""} (straight line)",
+                nodeIds = vIds, metrics = metricsCalculator.calculate(vIds),
+                difficultyProfile = DifficultyProfile(p95Slope = 0.0),
+                warnings = emptyList(), isSelectable = true
+            ))
+        }
 
         // Snap each point to the Overpass graph using unique virtual node IDs (-10, -11, …).
         val snapNodes = (bundledGraph.nodes + overpassGraph.nodes).toMutableMap()
@@ -1100,17 +1455,21 @@ class MainActivity : AppCompatActivity() {
             vid
         }
 
-        if (snapEdges[virtualIds.first()].isNullOrEmpty() ||
-            snapEdges[virtualIds.last()].isNullOrEmpty()) return emptyList()
-
         val waypointGraph  = Graph(nodes = snapNodes, edges = snapEdges, landmarks = graph.landmarks)
         val waypointRouter = AStarRouter(waypointGraph)
 
         val segments = mutableListOf<List<Int>>()
         for (i in 0 until points.size - 1) {
-            val seg = waypointRouter.routeWithCapabilities(
+            var seg = waypointRouter.routeWithCapabilities(
                 virtualIds[i], virtualIds[i + 1], Capability.ALL, emptySet(), emptySet()
-            )?.nodeIds ?: return emptyList()
+            )?.nodeIds
+            if (seg == null || seg.size < 2) {
+                val d = haversine(points[i].latitude, points[i].longitude,
+                                  points[i + 1].latitude, points[i + 1].longitude)
+                snapEdges[virtualIds[i]] = (snapEdges[virtualIds[i]] ?: emptyList()) +
+                    Edge(to = virtualIds[i + 1], cost = d, requiredMask = Capability.WALKING)
+                seg = listOf(virtualIds[i], virtualIds[i + 1])
+            }
             segments.add(seg)
         }
 
@@ -1119,11 +1478,12 @@ class MainActivity : AppCompatActivity() {
         }
         if (fullPath.isEmpty()) return emptyList()
 
-        // Promote waypointGraph so overlays and navigation resolve all node IDs correctly.
-        graph             = waypointGraph
-        router            = AStarRouter(waypointGraph)
-        metricsCalculator = RouteMetricsCalculator(waypointGraph)
-        candidateGenerator = RouteCandidateGenerator(waypointGraph, router, metricsCalculator)
+        // Promote final snap graph (includes any straight-line fallback edges added in the loop).
+        val finalGraph    = Graph(nodes = snapNodes, edges = snapEdges, landmarks = graph.landmarks)
+        graph             = finalGraph
+        router            = AStarRouter(finalGraph)
+        metricsCalculator = RouteMetricsCalculator(finalGraph)
+        candidateGenerator = RouteCandidateGenerator(finalGraph, router, metricsCalculator)
 
         val wps = points.size - 2
         return listOf(RouteCandidate(
@@ -1268,7 +1628,7 @@ class MainActivity : AppCompatActivity() {
         routeIndex = null; elevationProfile = null; progressMeters = 0.0
         offTrackCount = 0; lastOffTrackAnnounce = 0L
         navPhase = NavPhase.IDLE
-        selectedHill = null; selectedCarPark = null
+        selectedHill = null; selectedCarPark = null; preferredRouteId = null
         driveBanner.visibility = View.GONE
         voiceNavigator.clearInstructions()
         routeSelectorRow.removeAllViews()
@@ -1305,8 +1665,10 @@ class MainActivity : AppCompatActivity() {
     private fun promptRemoveMarker(marker: Marker) {
         val idx = tapMarkers.indexOf(marker)
         if (idx < 0) return
+        val gridRef = OsGridRef.fromWGS84(marker.position.latitude, marker.position.longitude)
         AlertDialog.Builder(this)
-            .setMessage("Remove \"${marker.title}\" pin?")
+            .setTitle(marker.title)
+            .setMessage(gridRef)
             .setPositiveButton("Remove") { _, _ ->
                 tapMarkers.removeAt(idx)
                 tapPoints.removeAt(idx)
@@ -1524,7 +1886,7 @@ class MainActivity : AppCompatActivity() {
 
         listView.setOnItemClickListener { _, _, position, _ ->
             dialog.dismiss()
-            fetchCarParksAndSelect(results[position])
+            showRoutePickerOrProceed(results[position])
         }
 
         // Populates "Did you mean?" as rows of 2 chips so they wrap neatly.
@@ -1619,7 +1981,72 @@ class MainActivity : AppCompatActivity() {
         searchInput.requestFocus()
     }
 
-    /** After a result is tapped, look up nearby car parks then proceed. */
+    /**
+     * Show the route-picker dialog if this hill has known named routes, then proceed to
+     * car park selection. If no catalogue entry exists, skip straight to car parks.
+     */
+    private fun showRoutePickerOrProceed(result: HillSearchService.HillResult) {
+        val routes = ROUTE_CATALOGUE[result.name.trim().lowercase()]
+        if (routes.isNullOrEmpty()) {
+            preferredRouteId = null
+            fetchCarParksAndSelect(result)
+            return
+        }
+
+        val dp = resources.displayMetrics.density
+
+        // Build a scrollable list of tappable route cards
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xFF1A1A1A.toInt())
+            setPadding((dp * 4).toInt(), (dp * 4).toInt(), (dp * 4).toInt(), (dp * 4).toInt())
+        }
+
+        var pickerDialog: AlertDialog? = null
+
+        routes.forEach { route ->
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(0xFF252525.toInt())
+                setPadding((dp * 16).toInt(), (dp * 14).toInt(), (dp * 16).toInt(), (dp * 14).toInt())
+            }
+            card.addView(TextView(this).apply {
+                text = route.name
+                textSize = 16f
+                setTextColor(Color.WHITE)
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            })
+            card.addView(TextView(this).apply {
+                text = route.description
+                textSize = 13f
+                setTextColor(0xFFAAAAAA.toInt())
+                setPadding(0, (dp * 2).toInt(), 0, 0)
+            })
+            card.setOnClickListener {
+                preferredRouteId = route.id
+                pickerDialog?.dismiss()
+                fetchCarParksAndSelect(result)
+            }
+            container.addView(card, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (dp * 4).toInt() })
+        }
+
+        val scroll = android.widget.ScrollView(this).apply { addView(container) }
+
+        pickerDialog = AlertDialog.Builder(this)
+            .setTitle(result.name)
+            .setView(scroll)
+            .setNegativeButton("Any route") { _, _ ->
+                preferredRouteId = null
+                fetchCarParksAndSelect(result)
+            }
+            .create()
+        pickerDialog!!.show()
+    }
+
+    /** After a route (or "any") is chosen, look up nearby car parks then proceed. */
     private fun fetchCarParksAndSelect(result: HillSearchService.HillResult) {
         sheetTitle.text = "Finding car parks…"
         Thread {

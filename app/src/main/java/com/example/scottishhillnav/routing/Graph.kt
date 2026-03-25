@@ -18,7 +18,9 @@ data class Edge(
 class Graph(
     val nodes: Map<Int, Node>,
     val edges: Map<Int, List<Edge>>,
-    val landmarks: Map<String, Int> = emptyMap()
+    val landmarks: Map<String, Int> = emptyMap(),
+    /** Ordered node sequences for named GPX-imported routes, keyed by route ID (e.g. "lomond_tourist"). */
+    val routeSequences: Map<String, List<Int>> = emptyMap()
 ) {
     fun nearestNodeId(lat: Double, lon: Double): Int? =
         nearestNodeIds(lat, lon, 1).firstOrNull()

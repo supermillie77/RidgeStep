@@ -1,5 +1,15 @@
 # Scottish Hill Nav — CLAUDE.md
 
+## GitHub repository
+
+**https://github.com/supermillie77/RidgeStep**
+
+This is the authoritative source for all code. When making edits, always read the latest version
+of the relevant file from this repo before making changes. Use the raw file URL pattern:
+`https://raw.githubusercontent.com/supermillie77/RidgeStep/main/{filepath}`
+
+e.g. `https://raw.githubusercontent.com/supermillie77/RidgeStep/main/app/src/main/java/com/example/scottishhillnav/MainActivity.kt`
+
 Android walking navigation app for Scottish hills (Munros, Corbetts, Grahams). Built in Kotlin
 targeting API 26+. Uses OSMDroid for map rendering, Overpass API for footpath data, Nominatim
 for place search, and a bundled binary graph (scotland\_pack) for primary A\* routing.

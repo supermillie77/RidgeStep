@@ -21,7 +21,14 @@ class GpxRouteImporter(
         val startLandmarkKey: String,
         val endLandmarkKey: String,
         val requiredMask: Int,
-        val bidirectional: Boolean = true
+        val bidirectional: Boolean = true,
+        /**
+         * If set, the ordered list of route node IDs is stored in [Graph.routeSequences] under
+         * this key. Used by [RouteCandidateGenerator] to build the curated core directly from
+         * the GPX track rather than via A*, preventing path conflation when two routes share
+         * start/end nodes (e.g. Ben Lomond Tourist & Ptarmigan routes).
+         */
+        val routeSequenceKey: String? = null
     )
 
     private data class TrackPoint(
@@ -51,6 +58,7 @@ class GpxRouteImporter(
         val nodes = base.nodes.toMutableMap()
         val edges = base.edges.mapValues { it.value.toMutableList() }.toMutableMap()
         val landmarks = base.landmarks.toMutableMap()
+        val routeSequences = base.routeSequences.toMutableMap()
 
         // Snapshot of base graph node IDs BEFORE adding any GPX nodes.
         val baseNodeIds = base.nodes.keys.toSet()
@@ -152,6 +160,11 @@ class GpxRouteImporter(
         landmarks[spec.startLandmarkKey] = deduped.first()
         landmarks[spec.endLandmarkKey] = deduped.last()
 
+        // Store the full ordered node sequence so RouteCandidateGenerator can use it directly
+        // as the curated core rather than running A* (which would conflate routes sharing
+        // start/end nodes, e.g. Ben Lomond Tourist and Ptarmigan routes).
+        spec.routeSequenceKey?.let { routeSequences[it] = deduped.toList() }
+
         // Helpful debug logging
         Log.i(
             "GpxRouteImporter",
@@ -162,7 +175,8 @@ class GpxRouteImporter(
         return Graph(
             nodes = nodes.toMap(),
             edges = edges.mapValues { it.value.toList() },
-            landmarks = landmarks.toMap()
+            landmarks = landmarks.toMap(),
+            routeSequences = routeSequences.toMap()
         )
     }
 

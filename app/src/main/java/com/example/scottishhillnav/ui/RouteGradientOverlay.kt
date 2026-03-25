@@ -111,7 +111,10 @@ class RouteGradientOverlay(private val graphSupplier: () -> Graph) : Overlay() {
     private fun avgElev(ids: List<Int>, centre: Int, radius: Int): Double {
         var sum = 0.0; var count = 0
         for (i in (centre - radius).coerceAtLeast(0)..(centre + radius).coerceAtMost(ids.size - 1)) {
-            sum += graph.nodes[ids[i]]?.elevation ?: continue
+            val node = graph.nodes[ids[i]] ?: continue
+            // Elevation is pre-populated by enrichRouteElevations() on the routing thread.
+            // Never do file I/O here — draw() runs on the UI thread.
+            sum += node.elevation
             count++
         }
         return if (count == 0) 0.0 else sum / count

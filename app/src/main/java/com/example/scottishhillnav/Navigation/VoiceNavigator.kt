@@ -21,7 +21,10 @@ class VoiceNavigator(context: Context) : TextToSpeech.OnInitListener {
     }
 
     private val tts = TextToSpeech(context.applicationContext, this)
-    private var ready = false
+    private var ttsInitialized = false  // onInit called with SUCCESS
+    private var ready = false           // TTS initialized AND preferred language set
+    // Text queued to speak as soon as TTS finishes initialising (e.g. 🔊 tapped early)
+    private var pendingSpeak: String? = null
 
     /** Set to true to silence all announcements without clearing instructions. */
     var muted: Boolean = false
@@ -36,8 +39,10 @@ class VoiceNavigator(context: Context) : TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status != TextToSpeech.SUCCESS) {
             Log.w(TAG, "TTS init failed (status=$status)")
+            pendingSpeak = null  // can't speak — discard queued text
             return
         }
+        ttsInitialized = true
         // Route audio through the media stream so it is not silenced by notification/ring mute.
         tts.setAudioAttributes(
             AudioAttributes.Builder()
@@ -53,8 +58,15 @@ class VoiceNavigator(context: Context) : TextToSpeech.OnInitListener {
         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
             result = tts.setLanguage(Locale.getDefault())
         }
-        ready = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+        ready = result == TextToSpeech.LANG_AVAILABLE ||
+                result == TextToSpeech.LANG_COUNTRY_AVAILABLE ||
+                result == TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
         if (!ready) Log.w(TAG, "TTS language unavailable on this device")
+        // Speak anything that was queued while TTS was still initialising
+        pendingSpeak?.let { text ->
+            pendingSpeak = null
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "pronounce_queued")
+        }
     }
 
     // ── Public API ───────────────────────────────────────────────────────────
@@ -97,17 +109,20 @@ class VoiceNavigator(context: Context) : TextToSpeech.OnInitListener {
      */
     fun pronounce(text: String): Boolean {
         if (!ready) {
-            // Try to recover if onInit language setup failed
-            for (locale in listOf(Locale.UK, Locale.ENGLISH, Locale.getDefault())) {
-                val r = tts.setLanguage(locale)
-                if (r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED) {
-                    ready = true
-                    break
-                }
+            if (!ttsInitialized) {
+                // onInit hasn't fired yet — queue so it speaks as soon as TTS is ready.
+                pendingSpeak = text
+                return true   // optimistic; speech will fire when onInit completes
             }
+            // TTS engine is up but preferred locale failed — try speaking anyway;
+            // many devices produce audio even when setLanguage returns an error.
         }
-        if (!ready) return false
-        return tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "pronounce") == TextToSpeech.SUCCESS
+        return try {
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "pronounce") == TextToSpeech.SUCCESS
+        } catch (e: Exception) {
+            Log.w(TAG, "TTS speak failed: ${e.message}")
+            false
+        }
     }
 
     fun shutdown() {

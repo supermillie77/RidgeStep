@@ -69,6 +69,32 @@ object GraphStore {
                 )
             )
 
+            // Ben Lomond — Tourist Route (South Ridge path, Rowardennan → summit)
+            graph = importer.importFromAssets(
+                context,
+                graph,
+                GpxRouteImporter.ImportSpec(
+                    assetName = "ben-lomond-tourist-route.gpx",
+                    startLandmarkKey = "ben_lomond_tourist_start",
+                    endLandmarkKey = "ben_lomond_tourist_end",
+                    requiredMask = Capability.WALKING,
+                    routeSequenceKey = "lomond_tourist"
+                )
+            )
+
+            // Ben Lomond — Ptarmigan Route (Ptarmigan Ridge, Rowardennan → summit)
+            graph = importer.importFromAssets(
+                context,
+                graph,
+                GpxRouteImporter.ImportSpec(
+                    assetName = "ben-lomond-ptarmigan-route.gpx",
+                    startLandmarkKey = "ben_lomond_ptarmigan_start",
+                    endLandmarkKey = "ben_lomond_ptarmigan_end",
+                    requiredMask = Capability.WALKING,
+                    routeSequenceKey = "lomond_ptarmigan"
+                )
+            )
+
             Log.e(TAG, "Landmarks: ${graph.landmarks.keys.sorted().joinToString()}")
 
             cached = graph

@@ -312,8 +312,29 @@ object HillSearchService {
             .sortedBy { haversine(lat, lon, it.lat, it.lon) }
             .take(3)
 
-        // Output: car parks + ferry access + road-end settlements.
-        val result = (dedupedParks + ferryAccess + roadEnds)
+        // Only include ferry access if no road-accessible car park exists within 15 km.
+        // This prevents Clyde/Firth ferries from appearing for mainland mountains like
+        // Ben Lomond, Ben Nevis, etc., while still showing ferry options for genuinely
+        // car-inaccessible mountains like Ladhar Bheinn (Knoydart).
+        val hasNearbyParking = dedupedParks.any { haversine(lat, lon, it.lat, it.lon) < 15_000.0 }
+        val effectiveFerry   = if (hasNearbyParking) emptyList() else ferryAccess
+
+        // Enrich unnamed car parks in the top-10 nearest with a reverse-geocoded locality
+        // label so users see "Car park, Rowardennan" instead of a bare "Car park".
+        // Settlement enrichment above covers the common case; this handles mountains where
+        // the ferry query returned no settlements (typical for road-accessible hills).
+        val sortedForLabel = dedupedParks.sortedBy { haversine(lat, lon, it.lat, it.lon) }
+        val labelledParks  = sortedForLabel.take(10).map { cp ->
+            when {
+                cp.area.isNotEmpty()  -> cp          // already has label
+                cp.name != "Car park" -> cp          // named parks don't need area label
+                else -> reverseGeocodeLocality(cp.lat, cp.lon)
+                            ?.let { cp.copy(area = it) } ?: cp
+            }
+        } + sortedForLabel.drop(10)
+
+        // Output: car parks + ferry access (if needed) + road-end settlements.
+        val result = (labelledParks + effectiveFerry + roadEnds)
             .sortedBy { haversine(lat, lon, it.lat, it.lon) }
         if (result.isNotEmpty()) carParkCache[cacheKey] = result
         return result
@@ -347,6 +368,33 @@ object HillSearchService {
                 if (dist < bestDist) { bestDist = dist; best = CarPark(name, rLat, rLon) }
             }
             best
+        } catch (e: Exception) { null }
+    }
+
+    /**
+     * Nominatim reverse geocode to get the nearest human-readable locality for a coordinate.
+     * Returns the most specific available place name (village > hamlet > suburb > town > city),
+     * or null if the call fails or returns nothing useful.
+     */
+    private fun reverseGeocodeLocality(lat: Double, lon: Double): String? {
+        return try {
+            val url = URL(
+                "https://nominatim.openstreetmap.org/reverse" +
+                    "?lat=$lat&lon=$lon&format=json&zoom=14&addressdetails=1"
+            )
+            val conn = url.openConnection() as HttpURLConnection
+            conn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
+            conn.connectTimeout = 4_000; conn.readTimeout = 4_000
+            val obj = try {
+                JSONObject(conn.inputStream.bufferedReader().readText())
+            } finally { conn.disconnect() }
+            val addr = obj.optJSONObject("address") ?: return null
+            addr.optString("village").takeIf { it.isNotEmpty() }
+                ?: addr.optString("hamlet").takeIf  { it.isNotEmpty() }
+                ?: addr.optString("suburb").takeIf  { it.isNotEmpty() }
+                ?: addr.optString("town").takeIf    { it.isNotEmpty() }
+                ?: addr.optString("city").takeIf    { it.isNotEmpty() }
+                ?: addr.optString("county").takeIf  { it.isNotEmpty() }
         } catch (e: Exception) { null }
     }
 
