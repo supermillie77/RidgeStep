@@ -332,11 +332,6 @@ object HillSearchService {
         }
 
         // ── Cross-water filter ────────────────────────────────────────────────
-        // Remove car parks whose MIDPOINT to the hill summit falls inside a water polygon.
-        // Using the midpoint (not a segment intersection) avoids false positives for
-        // shore-side car parks like Rowardennan, whose coordinates sit right on the Loch
-        // Lomond eastern boundary — their midpoint to the summit is on dry land, while
-        // the midpoint from a west-bank A82 lay-by lands in the middle of the loch.
         fun midpointInWater(cpLat: Double, cpLon: Double): Boolean {
             val midLat = (cpLat + lat) / 2.0
             val midLon = (cpLon + lon) / 2.0
@@ -345,16 +340,15 @@ object HillSearchService {
             }
             return false
         }
-        val accessibleParks = run {
-            val afterWater = if (waterPolygons.isEmpty()) dedupedParks
-                             else dedupedParks.filter { cp -> !midpointInWater(cp.lat, cp.lon) }
-            // Hard-exclude west-bank (A82) car parks for Ben Lomond.
-            // Loch Lomond's mid-loch longitude is ~-4.70°W; anything west of that is
-            // the A82 shore and cannot be driven to the east-bank trailhead at Rowardennan.
-            if (haversine(lat, lon, BEN_LOMOND_LAT, BEN_LOMOND_LON) < 10_000.0)
-                afterWater.filter { it.lon > -4.70 }
-            else
-                afterWater
+        // For Ben Lomond, skip the water-polygon test — Rowardennan sits right on the
+        // eastern shoreline, making polygon intersection unreliable. Use a hard longitude
+        // cutoff instead: -4.70°W is mid-loch; anything west is the A82 shore with no
+        // road link to the east-bank trailhead at Rowardennan.
+        val nearBenLomond = haversine(lat, lon, BEN_LOMOND_LAT, BEN_LOMOND_LON) < 10_000.0
+        val accessibleParks = when {
+            nearBenLomond           -> dedupedParks.filter { it.lon > -4.70 }
+            waterPolygons.isEmpty() -> dedupedParks
+            else                    -> dedupedParks.filter { cp -> !midpointInWater(cp.lat, cp.lon) }
         }
 
         // ── Road-end settlement fallback ──────────────────────────────────────
@@ -366,6 +360,7 @@ object HillSearchService {
             .filter { s ->
                 val d = haversine(lat, lon, s.lat, s.lon)
                 d in 20_000.0..35_000.0 &&
+                (!nearBenLomond || s.lon > -4.70) &&   // east-bank only for Ben Lomond
                 accessibleParks.none { haversine(it.lat, it.lon, s.lat, s.lon) < 2_000.0 } &&
                 ferryAccess.none     { haversine(it.lat, it.lon, s.lat, s.lon) < 2_000.0 }
             }
