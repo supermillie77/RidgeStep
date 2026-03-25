@@ -617,16 +617,24 @@ class MainActivity : AppCompatActivity() {
         if (hill != null) {
             val hearBtn = TextView(this).apply {
                 text = "🔊"
-                textSize = 20f
-                setPadding((dp * 8).toInt(), 0, 0, 0)
+                textSize = 26f
+                setTextColor(Color.WHITE)
+                // Generous padding on all sides so the touch target is easy to hit
+                val p = (dp * 10).toInt()
+                setPadding(p, p, p, p)
+                isClickable = true
+                isFocusable  = true
+                // Ripple so user sees the tap was registered
+                background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(0x55FFFFFF),
+                    null, null
+                )
                 setOnClickListener {
-                    val spoke = voiceNavigator.pronounce(GaelicPronouncer.phonetic(hill.name))
-                    Toast.makeText(
-                        this@MainActivity,
-                        if (spoke) hill.name
-                        else "${hill.name}\n(Enable TTS in Settings › Accessibility › Text-to-speech)",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    val phonetic = GaelicPronouncer.phonetic(hill.name)
+                    voiceNavigator.pronounce(phonetic)
+                    // Always show the phonetic text — readable even if audio is muted
+                    val display = if (phonetic != hill.name) "$phonetic\n(${hill.name})" else hill.name
+                    Toast.makeText(this@MainActivity, display, Toast.LENGTH_LONG).show()
                 }
             }
             hillRow.addView(hearBtn)

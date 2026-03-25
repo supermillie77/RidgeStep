@@ -105,23 +105,18 @@ class VoiceNavigator(context: Context) : TextToSpeech.OnInitListener {
 
     /**
      * Pronounce a name on user request — always speaks even when navigation is muted.
-     * Returns true if TTS accepted the speech, false if TTS is unavailable.
+     * If TTS hasn't initialised yet, queues the text to speak as soon as it's ready.
      */
-    fun pronounce(text: String): Boolean {
-        if (!ready) {
-            if (!ttsInitialized) {
-                // onInit hasn't fired yet — queue so it speaks as soon as TTS is ready.
-                pendingSpeak = text
-                return true   // optimistic; speech will fire when onInit completes
-            }
-            // TTS engine is up but preferred locale failed — try speaking anyway;
-            // many devices produce audio even when setLanguage returns an error.
+    fun pronounce(text: String) {
+        if (!ttsInitialized) {
+            // onInit hasn't fired yet — queue so it speaks the moment TTS is ready
+            pendingSpeak = text
+            return
         }
-        return try {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "pronounce") == TextToSpeech.SUCCESS
+        try {
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "pronounce")
         } catch (e: Exception) {
             Log.w(TAG, "TTS speak failed: ${e.message}")
-            false
         }
     }
 
