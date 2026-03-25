@@ -19,10 +19,10 @@ object GaelicPronouncer {
     private val fullNameOverrides: Map<String, String> = mapOf(
         // Ben Nevis group
         "Ben Nevis"               to "Ben Neevish",
-        "Carn Mòr Dearg"          to "Karn More Jerrak",
+        "Carn Mòr Dearg"          to "Karn More Jer-ak",
         "Aonach Mòr"              to "Oo-nach More",
         "Aonach Beag"             to "Oo-nach Bek",
-        "Carn Dearg"              to "Karn Jerrak",
+        "Carn Dearg"              to "Karn Jer-ak",
 
         // Ben Lomond
         "Ben Lomond"              to "Ben Lomond",   // English enough; keep as-is
@@ -43,7 +43,7 @@ object GaelicPronouncer {
         "Bidean nam Bian"         to "BEE-jen nam BEE-an",
         "Buachaille Etive Mòr"    to "BOO-achkh-la EH-tiv More",
         "Buachaille Etive Beag"   to "BOO-achkh-la EH-tiv Bek",
-        "Stob Coire Sgreamhach"   to "Stop Corr-a Skreev-ach",
+        "Stob Coire Sgreamhach"   to "Stop Corr-uh Skreev-ach",
         "Stob na Doire"           to "Stop na Doy-ra",
         "Binnein Mòr"             to "Bin-yan More",
         "Na Gruagaichean"         to "Na Groo-a-gee-chen",
@@ -53,13 +53,13 @@ object GaelicPronouncer {
         "Cairn of Claise"         to "Karn of Clesh",
         "Carn an Tuirc"           to "Karn an Toork",
         "Tolmount"                to "Toll-mount",
-        "Tom Buidhe"              to "Tom Boo-ya",
+        "Tom Buidhe"              to "Towm Boo-ya",
 
         // Torridon
         "Beinn Eighe"             to "Ben Ay",
         "Liathach"                to "LEE-uh-ach",
         "Beinn Alligin"           to "Ben Al-ee-gin",
-        "Tom na Gruagaich"        to "Tom na Groo-a-geech",
+        "Tom na Gruagaich"        to "Towm na Groo-a-geech",
         "Sgùrr Mòr"               to "Skoor More",
         "Sgurr Mòr"               to "Skoor More",
 
@@ -82,7 +82,7 @@ object GaelicPronouncer {
         "Schiehallion"            to "Shee-hal-ee-un",
         "Ben Lawers"              to "Ben Law-erz",
         "Meall Corranaich"        to "Myowl Korr-an-ich",
-        "Meall a' Choire Leith"   to "Myowl a Chorr-a Lay",
+        "Meall a' Choire Leith"   to "Myowl a Chorr-uh Lay",
         "Beinn Ghlas"             to "Ben Glas",
         "Ben nan Eachainn"        to "Ben nan Yechan",
         "An Stuc"                 to "An Stoochk",
@@ -93,7 +93,7 @@ object GaelicPronouncer {
         "Bidein a' Ghlas Thuill"  to "BEE-jen a Glas Hooll",
 
         // Skye
-        "Sgurr Dearg"             to "Skoor Jerrak",
+        "Sgurr Dearg"             to "Skoor Jer-ak",
         "Inaccessible Pinnacle"   to "Inaccessible Pinnacle",
         "Sgurr na Banachdaich"    to "Skoor na Ban-ach-teech",
         "Sgurr Alasdair"          to "Skoor Al-as-ter",
@@ -119,10 +119,10 @@ object GaelicPronouncer {
         "Beinn Heasgarnich"       to "Ben Hes-gar-nich",
         "Meall Ghaordaidh"        to "Myowl Geurd-ee",
         "Carn Mairg"              to "Karn Marak",
-        "Meall Garbh"             to "Myowl Garuv",
+        "Meall Garbh"             to "Myowl Gar-uv",
 
         // Monadhliath
-        "Carn Dearg"              to "Karn Jerrak",
+        "Carn Dearg"              to "Karn Jer-ak",
         "Carn Sgulain"            to "Karn Skoo-lan",
         "A' Chailleach"           to "A Challyach",
         "Carn a' Chuilinn"        to "Karn a Choolin"
@@ -164,7 +164,7 @@ object GaelicPronouncer {
         sub("^Cruach$",     "KROO-ach"),
         sub("^Cnoc$",       "Krock"),
         sub("^Druim$",      "Droo-im"),
-        sub("^Tom$",        "Tom"),
+        sub("^Tom$",        "Towm"),
         sub("^Aonach$",     "Oo-nach"),
         sub("^Bidean$",     "BEE-jen"),
         sub("^Bidein$",     "BEE-jen"),
@@ -183,8 +183,8 @@ object GaelicPronouncer {
         sub("^Lairig$",  "LAR-ig"),
 
         // Corrie / water
-        sub("^Coire$",  "Corr-a"),
-        sub("^Choire$", "Chorr-a"),
+        sub("^Coire$",  "Corr-uh"),
+        sub("^Choire$", "Chorr-uh"),
         sub("^Allt$",   "Owlt"),
         sub("^Lochan$", "Loch-an"),
 
@@ -195,13 +195,13 @@ object GaelicPronouncer {
         sub("^Mhor$",  "Wore"),
         sub("^Beag$",  "Bek"),
         sub("^Bheag$", "Vek"),
-        sub("^Dearg$", "Jerrak"),
-        sub("^Dhearg$","Yerrak"),
+        sub("^Dearg$", "Jer-ak"),
+        sub("^Dhearg$","Yer-ak"),
         sub("^Dubh$",  "Doo"),
-        sub("^Dhubh$", "Goo"),
+        sub("^Dhubh$", "Yoo"),
         sub("^Liath$", "LEE-uh"),
         sub("^Ruadh$", "ROO-ugh"),
-        sub("^Garbh$", "Garuv"),
+        sub("^Garbh$", "Gar-uv"),
         sub("^Gharbh$","Aruv"),
         sub("^Odhar$", "OO-ur"),
         sub("^Fionn$", "Fyown"),
