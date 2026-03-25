@@ -34,6 +34,9 @@ object HillSearchService {
     // Ben Lomond summit — used to detect Ben Lomond queries and apply east-bank-only filter
     private const val BEN_LOMOND_LAT = 56.1902
     private const val BEN_LOMOND_LON = -4.6340
+    // Rowardennan car park — primary trailhead for Ben Lomond (end of the east-bank road)
+    private const val ROWARDENNAN_LAT = 56.1565
+    private const val ROWARDENNAN_LON = -4.6372
 
     fun clearCache() = carParkCache.clear()
 
@@ -371,8 +374,9 @@ object HillSearchService {
         // This prevents Clyde/Firth ferries from appearing for mainland mountains like
         // Ben Lomond, Ben Nevis, etc., while still showing ferry options for genuinely
         // car-inaccessible mountains like Ladhar Bheinn (Knoydart).
+        // Ben Lomond: always suppress — Loch Lomond has no relevant ferry service.
         val hasNearbyParking = accessibleParks.any { haversine(lat, lon, it.lat, it.lon) < 15_000.0 }
-        val effectiveFerry   = if (hasNearbyParking) emptyList() else ferryAccess
+        val effectiveFerry   = if (nearBenLomond || hasNearbyParking) emptyList() else ferryAccess
 
         // Enrich unnamed car parks in the top-10 nearest with a reverse-geocoded locality
         // label so users see "Car park, Rowardennan" instead of a bare "Car park".
@@ -388,8 +392,15 @@ object HillSearchService {
             }
         } + sortedForLabel.drop(10)
 
+        // Ben Lomond: guarantee Rowardennan appears by name as the primary trailhead.
+        // The Rowardennan car park may lack amenity=parking in OSM or may be named
+        // differently, so inject it if no car park is already within 600 m of it.
+        val rowardennFallback: List<CarPark> = if (nearBenLomond &&
+            labelledParks.none { haversine(it.lat, it.lon, ROWARDENNAN_LAT, ROWARDENNAN_LON) < 600.0 }
+        ) listOf(CarPark("Rowardennan", ROWARDENNAN_LAT, ROWARDENNAN_LON)) else emptyList()
+
         // Output: car parks + ferry access (if needed) + road-end settlements.
-        val result = (labelledParks + effectiveFerry + roadEnds)
+        val result = (labelledParks + rowardennFallback + effectiveFerry + roadEnds)
             .sortedBy { haversine(lat, lon, it.lat, it.lon) }
         if (result.isNotEmpty()) carParkCache[cacheKey] = result
         return result
