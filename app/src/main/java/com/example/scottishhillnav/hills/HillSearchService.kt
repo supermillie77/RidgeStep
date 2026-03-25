@@ -157,8 +157,7 @@ object HillSearchService {
                            else el.optDouble("lon", 0.0)
                 if (eLat == 0.0 && eLon == 0.0) continue
                 val name = tags?.optString("name", "").orEmpty()
-                if (name.isEmpty() || !isNaturalFeature(name))
-                    carParks.add(CarPark(name.ifEmpty { "Car park" }, eLat, eLon))
+                carParks.add(CarPark(name.ifEmpty { "Car park" }, eLat, eLon))
             }
         } catch (e: Exception) { /* continue */ }
 
@@ -232,6 +231,37 @@ object HillSearchService {
             }
         } catch (e: Exception) { /* continue */ }
 
+        // ── Query 3: water polygons for cross-water barrier detection ─────────
+        // Fetch natural=water polygons (lochs, reservoirs) so we can exclude car parks
+        // whose straight line to the summit crosses a water body (e.g. A82 / Firkin Point
+        // on the west side of Loch Lomond when the hill is on the east side).
+        val waterPolygons = mutableListOf<List<Pair<Double, Double>>>()
+        try {
+            val q = URLEncoder.encode(
+                "[out:json][timeout:30];" +
+                    "way[\"natural\"=\"water\"](around:25000,$lat,$lon);" +
+                    "out geom;",
+                "UTF-8"
+            )
+            val conn = URL("https://overpass-api.de/api/interpreter?data=$q")
+                .openConnection() as HttpURLConnection
+            conn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
+            conn.connectTimeout = 30_000; conn.readTimeout = 30_000
+            val elements = try {
+                JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("elements")
+            } finally { conn.disconnect() }
+            for (i in 0 until elements.length()) {
+                val el = elements.getJSONObject(i)
+                val geometry = el.optJSONArray("geometry") ?: continue
+                if (geometry.length() < 3) continue
+                val polygon = (0 until geometry.length()).map { j ->
+                    val pt = geometry.getJSONObject(j)
+                    pt.getDouble("lat") to pt.getDouble("lon")
+                }
+                waterPolygons.add(polygon)
+            }
+        } catch (e: Exception) { /* continue without water filtering */ }
+
         // ── Build ferry pairs ─────────────────────────────────────────────────
         val ferryAccess = mutableListOf<CarPark>()
 
@@ -297,6 +327,25 @@ object HillSearchService {
             ) dedupedParks.add(cp)
         }
 
+        // ── Cross-water filter ────────────────────────────────────────────────
+        // Remove car parks whose straight line to the hill summit crosses a water polygon.
+        // This eliminates west-bank Loch Lomond car parks (Firkin Point, A82 lay-bys) when
+        // the hill is on the east bank — they are geographically close but road-inaccessible.
+        fun crossesWater(cpLat: Double, cpLon: Double): Boolean {
+            for (polygon in waterPolygons) {
+                val n = polygon.size
+                for (i in 0 until n) {
+                    val (c1lat, c1lon) = polygon[i]
+                    val (c2lat, c2lon) = polygon[(i + 1) % n]
+                    if (segmentsIntersect(cpLat, cpLon, lat, lon, c1lat, c1lon, c2lat, c2lon))
+                        return true
+                }
+            }
+            return false
+        }
+        val accessibleParks = if (waterPolygons.isEmpty()) dedupedParks
+            else dedupedParks.filter { cp -> !crossesWater(cp.lat, cp.lon) }
+
         // ── Road-end settlement fallback ──────────────────────────────────────
         // Settlements 20–35 km from the mountain are likely road-end access points
         // (e.g. Kinlochhourn at ~23 km for Ladhar Bheinn). Settlements closer than 20 km
@@ -306,8 +355,8 @@ object HillSearchService {
             .filter { s ->
                 val d = haversine(lat, lon, s.lat, s.lon)
                 d in 20_000.0..35_000.0 &&
-                dedupedParks.none  { haversine(it.lat, it.lon, s.lat, s.lon) < 2_000.0 } &&
-                ferryAccess.none   { haversine(it.lat, it.lon, s.lat, s.lon) < 2_000.0 }
+                accessibleParks.none { haversine(it.lat, it.lon, s.lat, s.lon) < 2_000.0 } &&
+                ferryAccess.none     { haversine(it.lat, it.lon, s.lat, s.lon) < 2_000.0 }
             }
             .sortedBy { haversine(lat, lon, it.lat, it.lon) }
             .take(3)
@@ -316,14 +365,14 @@ object HillSearchService {
         // This prevents Clyde/Firth ferries from appearing for mainland mountains like
         // Ben Lomond, Ben Nevis, etc., while still showing ferry options for genuinely
         // car-inaccessible mountains like Ladhar Bheinn (Knoydart).
-        val hasNearbyParking = dedupedParks.any { haversine(lat, lon, it.lat, it.lon) < 15_000.0 }
+        val hasNearbyParking = accessibleParks.any { haversine(lat, lon, it.lat, it.lon) < 15_000.0 }
         val effectiveFerry   = if (hasNearbyParking) emptyList() else ferryAccess
 
         // Enrich unnamed car parks in the top-10 nearest with a reverse-geocoded locality
         // label so users see "Car park, Rowardennan" instead of a bare "Car park".
         // Settlement enrichment above covers the common case; this handles mountains where
         // the ferry query returned no settlements (typical for road-accessible hills).
-        val sortedForLabel = dedupedParks.sortedBy { haversine(lat, lon, it.lat, it.lon) }
+        val sortedForLabel = accessibleParks.sortedBy { haversine(lat, lon, it.lat, it.lon) }
         val labelledParks  = sortedForLabel.take(10).map { cp ->
             when {
                 cp.area.isNotEmpty()  -> cp          // already has label
@@ -396,6 +445,25 @@ object HillSearchService {
                 ?: addr.optString("city").takeIf    { it.isNotEmpty() }
                 ?: addr.optString("county").takeIf  { it.isNotEmpty() }
         } catch (e: Exception) { null }
+    }
+
+    /**
+     * Returns true if segment AB (car park → summit) intersects segment CD (polygon edge).
+     * Uses the standard cross-product sign test — collinear / touching edges return false.
+     * Coordinates are lat/lon; for crossing detection at this scale the planar approximation is fine.
+     */
+    private fun segmentsIntersect(
+        ax: Double, ay: Double, bx: Double, by: Double,
+        cx: Double, cy: Double, dx: Double, dy: Double
+    ): Boolean {
+        fun cross(p1x: Double, p1y: Double, p2x: Double, p2y: Double, px: Double, py: Double) =
+            (p2x - p1x) * (py - p1y) - (p2y - p1y) * (px - p1x)
+        val d1 = cross(cx, cy, dx, dy, ax, ay)
+        val d2 = cross(cx, cy, dx, dy, bx, by)
+        val d3 = cross(ax, ay, bx, by, cx, cy)
+        val d4 = cross(ax, ay, bx, by, dx, dy)
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+               ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
     }
 
     private fun haversine(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
