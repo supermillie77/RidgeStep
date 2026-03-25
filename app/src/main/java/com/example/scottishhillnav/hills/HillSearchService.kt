@@ -31,6 +31,10 @@ object HillSearchService {
     private const val PLACE_REGEX =
         "^(city|town|village|hamlet|suburb|neighbourhood|quarter)$"
 
+    // Ben Lomond summit — used to detect Ben Lomond queries and apply east-bank-only filter
+    private const val BEN_LOMOND_LAT = 56.1902
+    private const val BEN_LOMOND_LON = -4.6340
+
     fun clearCache() = carParkCache.clear()
 
     data class HillResult(
@@ -341,8 +345,17 @@ object HillSearchService {
             }
             return false
         }
-        val accessibleParks = if (waterPolygons.isEmpty()) dedupedParks
-            else dedupedParks.filter { cp -> !midpointInWater(cp.lat, cp.lon) }
+        val accessibleParks = run {
+            val afterWater = if (waterPolygons.isEmpty()) dedupedParks
+                             else dedupedParks.filter { cp -> !midpointInWater(cp.lat, cp.lon) }
+            // Hard-exclude west-bank (A82) car parks for Ben Lomond.
+            // Loch Lomond's mid-loch longitude is ~-4.70°W; anything west of that is
+            // the A82 shore and cannot be driven to the east-bank trailhead at Rowardennan.
+            if (haversine(lat, lon, BEN_LOMOND_LAT, BEN_LOMOND_LON) < 10_000.0)
+                afterWater.filter { it.lon > -4.70 }
+            else
+                afterWater
+        }
 
         // ── Road-end settlement fallback ──────────────────────────────────────
         // Settlements 20–35 km from the mountain are likely road-end access points
