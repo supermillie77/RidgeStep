@@ -328,23 +328,21 @@ object HillSearchService {
         }
 
         // ── Cross-water filter ────────────────────────────────────────────────
-        // Remove car parks whose straight line to the hill summit crosses a water polygon.
-        // This eliminates west-bank Loch Lomond car parks (Firkin Point, A82 lay-bys) when
-        // the hill is on the east bank — they are geographically close but road-inaccessible.
-        fun crossesWater(cpLat: Double, cpLon: Double): Boolean {
+        // Remove car parks whose MIDPOINT to the hill summit falls inside a water polygon.
+        // Using the midpoint (not a segment intersection) avoids false positives for
+        // shore-side car parks like Rowardennan, whose coordinates sit right on the Loch
+        // Lomond eastern boundary — their midpoint to the summit is on dry land, while
+        // the midpoint from a west-bank A82 lay-by lands in the middle of the loch.
+        fun midpointInWater(cpLat: Double, cpLon: Double): Boolean {
+            val midLat = (cpLat + lat) / 2.0
+            val midLon = (cpLon + lon) / 2.0
             for (polygon in waterPolygons) {
-                val n = polygon.size
-                for (i in 0 until n) {
-                    val (c1lat, c1lon) = polygon[i]
-                    val (c2lat, c2lon) = polygon[(i + 1) % n]
-                    if (segmentsIntersect(cpLat, cpLon, lat, lon, c1lat, c1lon, c2lat, c2lon))
-                        return true
-                }
+                if (pointInPolygon(midLat, midLon, polygon)) return true
             }
             return false
         }
         val accessibleParks = if (waterPolygons.isEmpty()) dedupedParks
-            else dedupedParks.filter { cp -> !crossesWater(cp.lat, cp.lon) }
+            else dedupedParks.filter { cp -> !midpointInWater(cp.lat, cp.lon) }
 
         // ── Road-end settlement fallback ──────────────────────────────────────
         // Settlements 20–35 km from the mountain are likely road-end access points
@@ -448,22 +446,27 @@ object HillSearchService {
     }
 
     /**
-     * Returns true if segment AB (car park → summit) intersects segment CD (polygon edge).
-     * Uses the standard cross-product sign test — collinear / touching edges return false.
-     * Coordinates are lat/lon; for crossing detection at this scale the planar approximation is fine.
+     * Ray-casting point-in-polygon test (Jordan curve theorem).
+     * Casts a ray northward (+lat) from [pLat]/[pLon] and counts how many polygon edges
+     * it crosses; odd = inside.  Coordinates are lat/lon; planar approximation is fine
+     * for the scales involved (< 25 km).
      */
-    private fun segmentsIntersect(
-        ax: Double, ay: Double, bx: Double, by: Double,
-        cx: Double, cy: Double, dx: Double, dy: Double
+    private fun pointInPolygon(
+        pLat: Double, pLon: Double,
+        polygon: List<Pair<Double, Double>>
     ): Boolean {
-        fun cross(p1x: Double, p1y: Double, p2x: Double, p2y: Double, px: Double, py: Double) =
-            (p2x - p1x) * (py - p1y) - (p2y - p1y) * (px - p1x)
-        val d1 = cross(cx, cy, dx, dy, ax, ay)
-        val d2 = cross(cx, cy, dx, dy, bx, by)
-        val d3 = cross(ax, ay, bx, by, cx, cy)
-        val d4 = cross(ax, ay, bx, by, dx, dy)
-        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-               ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+        var inside = false
+        var j = polygon.size - 1
+        for (i in polygon.indices) {
+            val (iLat, iLon) = polygon[i]
+            val (jLat, jLon) = polygon[j]
+            if ((iLon > pLon) != (jLon > pLon) &&
+                pLat < (jLat - iLat) * (pLon - iLon) / (jLon - iLon) + iLat) {
+                inside = !inside
+            }
+            j = i
+        }
+        return inside
     }
 
     private fun haversine(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
