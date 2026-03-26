@@ -1028,7 +1028,7 @@ class MainActivity : AppCompatActivity() {
             val midLat = (start.latitude  + end.latitude)  / 2.0
             val midLon = (start.longitude + end.longitude) / 2.0
             val routeDist = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
-            val radius = (routeDist / 2.0 + 4_000.0).toInt().coerceIn(8_000, 20_000)
+            val radius = (routeDist / 2.0 + 5_000.0).toInt().coerceIn(10_000, 25_000)
 
             val overpassGraph = try {
                 OverpassGraphBuilder.buildForArea(midLat, midLon, radius)
@@ -1049,7 +1049,7 @@ class MainActivity : AppCompatActivity() {
             fun snapEdgesTo(pinLat: Double, pinLon: Double): List<Edge> =
                 connectedEntries
                     .sortedBy { (_, n) -> haversine(pinLat, pinLon, n.lat, n.lon) }
-                    .take(5)
+                    .take(8)
                     .map { (id, n) ->
                         Edge(to = id, cost = haversine(pinLat, pinLon, n.lat, n.lon),
                              requiredMask = Capability.WALKING)
@@ -1197,14 +1197,14 @@ class MainActivity : AppCompatActivity() {
         val opMidLat = (start.latitude + end.latitude) / 2.0
         val opMidLon = (start.longitude + end.longitude) / 2.0
         val opDist   = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
-        val opRadius = (opDist / 2.0 + 4_000.0).toInt().coerceIn(8_000, 20_000)
+        val opRadius = (opDist / 2.0 + 5_000.0).toInt().coerceIn(10_000, 25_000)
         val opGraph  = try { OverpassGraphBuilder.buildForArea(opMidLat, opMidLon, opRadius) }
                        catch (_: Exception) { null }
         if (opGraph != null) {
             val opConnected = opGraph.nodes.entries
                 .filter { opGraph.edges[it.key]?.isNotEmpty() == true }
             fun opSnap(pLat: Double, pLon: Double) = opConnected
-                .sortedBy { (_, n) -> haversine(pLat, pLon, n.lat, n.lon) }.take(5)
+                .sortedBy { (_, n) -> haversine(pLat, pLon, n.lat, n.lon) }.take(8)
                 .map { (id, n) -> Edge(to = id, cost = haversine(pLat, pLon, n.lat, n.lon),
                                        requiredMask = Capability.WALKING) }
             val OPVS = -1; val OPVE = -2
@@ -1219,16 +1219,64 @@ class MainActivity : AppCompatActivity() {
                 opSnapEdges[s.to] = (opSnapEdges[s.to] ?: emptyList()) +
                     Edge(to = OPVE, cost = s.cost, requiredMask = Capability.WALKING)
             }
-            val opSGraph  = Graph(nodes = opSnapNodes, edges = opSnapEdges,
-                                  landmarks = bundledGraph.landmarks,
-                                  routeSequences = bundledGraph.routeSequences)
-            val opResult  = AStarRouter(opSGraph).routeWithCapabilities(
+            val opSGraph = Graph(nodes = opSnapNodes, edges = opSnapEdges,
+                                 landmarks = bundledGraph.landmarks,
+                                 routeSequences = bundledGraph.routeSequences)
+            var opResult = AStarRouter(opSGraph).routeWithCapabilities(
                 OPVS, OPVE, Capability.ALL, emptySet(), emptySet()
             )
+
+            // ── Bridge disconnected components ────────────────────────────────
+            // Road nodes (from bundledGraph or Overpass road ways) and footpath nodes
+            // are often in separate connected components for Scottish hills — the car
+            // park track may not be tagged as connecting to the summit path. Bridge
+            // the single closest cross-component node pair and retry A*.
+            if (opResult == null || opResult.nodeIds.size < 2) {
+                fun opReachFrom(seeds: List<Edge>): HashSet<Int> {
+                    val vis = HashSet<Int>(); val q = ArrayDeque<Int>()
+                    for (s in seeds) { if (vis.add(s.to)) q.add(s.to) }
+                    while (q.isNotEmpty()) {
+                        val cur = q.removeFirst()
+                        for (e in opSnapEdges[cur] ?: emptyList()) {
+                            if (e.to >= 0 && vis.add(e.to)) q.add(e.to)
+                        }
+                    }
+                    return vis
+                }
+                val opSR = opReachFrom(opStartSnaps)
+                val opER = opReachFrom(opEndSnaps)
+                if (opSR.none { it in opER }) {
+                    var minD = Double.MAX_VALUE; var bF = -1; var bT = -1
+                    for (a in opSR) {
+                        val na = opSnapNodes[a] ?: continue
+                        for (b in opER) {
+                            val nb = opSnapNodes[b] ?: continue
+                            val d = haversine(na.lat, na.lon, nb.lat, nb.lon)
+                            if (d < minD) { minD = d; bF = a; bT = b }
+                        }
+                    }
+                    if (bF >= 0) {
+                        opSnapEdges[bF] = (opSnapEdges[bF] ?: emptyList()) +
+                            Edge(to = bT, cost = minD, requiredMask = Capability.WALKING)
+                        opSnapEdges[bT] = (opSnapEdges[bT] ?: emptyList()) +
+                            Edge(to = bF, cost = minD, requiredMask = Capability.WALKING)
+                        val bridgedGraph = Graph(nodes = opSnapNodes, edges = opSnapEdges,
+                                                 landmarks = bundledGraph.landmarks,
+                                                 routeSequences = bundledGraph.routeSequences)
+                        opResult = AStarRouter(bridgedGraph).routeWithCapabilities(
+                            OPVS, OPVE, Capability.ALL, emptySet(), emptySet()
+                        )
+                    }
+                }
+            }
+
             if (opResult != null && opResult.nodeIds.size >= 2) {
-                graph = opSGraph; router = AStarRouter(opSGraph)
-                metricsCalculator  = RouteMetricsCalculator(opSGraph)
-                candidateGenerator = RouteCandidateGenerator(opSGraph, router, metricsCalculator)
+                val finalOpGraph = Graph(nodes = opSnapNodes, edges = opSnapEdges,
+                                        landmarks = bundledGraph.landmarks,
+                                        routeSequences = bundledGraph.routeSequences)
+                graph = finalOpGraph; router = AStarRouter(finalOpGraph)
+                metricsCalculator  = RouteMetricsCalculator(finalOpGraph)
+                candidateGenerator = RouteCandidateGenerator(finalOpGraph, router, metricsCalculator)
 
                 // After gaining Overpass connectivity, try curated named routes again
                 // (e.g. Ben Lomond Tourist/Ptarmigan when bundled graph lacked footpath)
@@ -1238,8 +1286,8 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 return listOf(RouteCandidate(
-                    id = "direct", familyId = "direct_family", name = "Direct Route",
-                    shortDescription = "Best available path",
+                    id = "direct", familyId = "direct_family", name = "Best available path",
+                    shortDescription = "Footpath route",
                     nodeIds = opResult.nodeIds,
                     metrics = metricsCalculator.calculate(opResult.nodeIds),
                     difficultyProfile = DifficultyProfile(p95Slope = 0.0),
