@@ -44,6 +44,34 @@ object HillSearchService {
     fun clearCache() = carParkCache.clear()
     fun clearAreaCache() { areaHillsCache = null }
 
+    // Overpass endpoints tried in order. kumi.systems is a reliable public mirror.
+    private val OVERPASS_ENDPOINTS = listOf(
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter"
+    )
+
+    /**
+     * Executes an Overpass GET query against each endpoint in [OVERPASS_ENDPOINTS] in turn,
+     * returning the parsed JSON on the first success. Returns null if all endpoints fail.
+     */
+    private fun overpassGet(encodedQuery: String,
+                            connectMs: Int = 45_000,
+                            readMs: Int    = 45_000): org.json.JSONObject? {
+        for (endpoint in OVERPASS_ENDPOINTS) {
+            val conn = try {
+                URL("$endpoint?data=$encodedQuery").openConnection() as HttpURLConnection
+            } catch (_: Exception) { continue }
+            conn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
+            conn.connectTimeout = connectMs; conn.readTimeout = readMs
+            val json = try {
+                JSONObject(conn.inputStream.bufferedReader().readText())
+            } catch (_: Exception) { null }
+            finally { conn.disconnect() }
+            if (json != null) return json
+        }
+        return null
+    }
+
     data class HillResult(
         val name: String,
         val area: String,
@@ -275,6 +303,8 @@ object HillSearchService {
         // ── Query 1: car parks within 30 km ──────────────────────────────────
         // 30 km catches remote road-end car parks (e.g. Kinlochhourn, ~23 km from
         // Ladhar Bheinn) that a smaller radius would miss.
+        // overpassGet() tries the primary server then a mirror, so a single rate-limit
+        // or temporary outage on overpass-api.de doesn't wipe the car park list.
         try {
             val q = URLEncoder.encode(
                 "[out:json][timeout:45];" +
@@ -283,23 +313,19 @@ object HillSearchService {
                     "out center tags;",
                 "UTF-8"
             )
-            val conn = URL("https://overpass-api.de/api/interpreter?data=$q")
-                .openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
-            conn.connectTimeout = 45_000; conn.readTimeout = 45_000
-            val elements = try {
-                JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("elements")
-            } finally { conn.disconnect() }
-            for (i in 0 until elements.length()) {
-                val el   = elements.getJSONObject(i)
-                val tags = el.optJSONObject("tags")
-                val eLat = if (el.has("center")) el.getJSONObject("center").getDouble("lat")
-                           else el.optDouble("lat", 0.0)
-                val eLon = if (el.has("center")) el.getJSONObject("center").getDouble("lon")
-                           else el.optDouble("lon", 0.0)
-                if (eLat == 0.0 && eLon == 0.0) continue
-                val name = tags?.optString("name", "").orEmpty()
-                carParks.add(CarPark(name.ifEmpty { "Car park" }, eLat, eLon))
+            val elements = overpassGet(q)?.getJSONArray("elements")
+            if (elements != null) {
+                for (i in 0 until elements.length()) {
+                    val el   = elements.getJSONObject(i)
+                    val tags = el.optJSONObject("tags")
+                    val eLat = if (el.has("center")) el.getJSONObject("center").getDouble("lat")
+                               else el.optDouble("lat", 0.0)
+                    val eLon = if (el.has("center")) el.getJSONObject("center").getDouble("lon")
+                               else el.optDouble("lon", 0.0)
+                    if (eLat == 0.0 && eLon == 0.0) continue
+                    val name = tags?.optString("name", "").orEmpty()
+                    carParks.add(CarPark(name.ifEmpty { "Car park" }, eLat, eLon))
+                }
             }
         } catch (e: Exception) { /* continue */ }
 
@@ -323,13 +349,9 @@ object HillSearchService {
                     "out center tags;",
                 "UTF-8"
             )
-            val conn = URL("https://overpass-api.de/api/interpreter?data=$q")
-                .openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
-            conn.connectTimeout = 60_000; conn.readTimeout = 60_000
-            val elements = try {
-                JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("elements")
-            } finally { conn.disconnect() }
+            val elements = overpassGet(q, connectMs = 60_000, readMs = 60_000)
+                ?.getJSONArray("elements")
+            if (elements == null) throw Exception("no elements")
             for (i in 0 until elements.length()) {
                 val el   = elements.getJSONObject(i)
                 val tags = el.optJSONObject("tags")
@@ -388,13 +410,7 @@ object HillSearchService {
                     "out geom;",
                 "UTF-8"
             )
-            val conn = URL("https://overpass-api.de/api/interpreter?data=$q")
-                .openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
-            conn.connectTimeout = 45_000; conn.readTimeout = 45_000
-            val elements = try {
-                JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("elements")
-            } finally { conn.disconnect() }
+            val elements = overpassGet(q)?.getJSONArray("elements") ?: throw Exception("no elements")
 
             fun addGeometry(geometry: org.json.JSONArray) {
                 if (geometry.length() < 3) return
