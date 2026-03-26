@@ -27,16 +27,22 @@ class ElevationProfileView(context: Context) : View(context) {
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
     }
-    // Progress vertical bar
+    // User-position vertical bar — amber so it stands out against the blue profile
     private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        strokeWidth = 2f
+        color = 0xFFFFB300.toInt()
+        strokeWidth = 2.5f
         style = Paint.Style.STROKE
     }
-    // Dot at current position on the line
+    // Filled dot at current position
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = 0xFFFFB300.toInt()
         style = Paint.Style.FILL
+    }
+    // Small elevation label next to the user dot
+    private val markerLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFB300.toInt()
+        textSize = 22f
+        textAlign = Paint.Align.LEFT
     }
     // Labels for min/max elevation
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -64,20 +70,26 @@ class ElevationProfileView(context: Context) : View(context) {
 
         val w = width.toFloat()
         val h = height.toFloat()
-        val padL = 48f   // left margin for labels
         val padR = 8f
         val padT = 12f
-        val padB = 22f   // bottom margin for labels
-        val plotW = w - padL - padR
-        val plotH = h - padT - padB
+        val padB = 24f
 
-        if (m.distances.isEmpty() || plotW <= 0f || plotH <= 0f) return
+        if (m.distances.isEmpty()) return
 
         val size  = m.distances.size
         val total = m.totalDistance.takeIf { it > 0 } ?: 1.0
         val minE  = m.elevations.minOrNull() ?: 0.0
         val maxE  = m.elevations.maxOrNull() ?: 0.0
         val range = maxE - minE
+
+        // Compute left padding from the actual label text so nothing is ever clipped.
+        val padL = maxOf(
+            labelPaint.measureText("%.0fm".format(minE)),
+            labelPaint.measureText("%.0fm".format(maxE))
+        ) + 10f   // +10 px gap between label and plot area
+
+        val plotW = w - padL - padR
+        val plotH = h - padT - padB
 
         // ── No data fallback ─────────────────────────────────────────────────
         if (range < 5.0) {
@@ -114,11 +126,17 @@ class ElevationProfileView(context: Context) : View(context) {
         }
         canvas.drawPath(line, linePaint)
 
-        // ── Progress indicator ───────────────────────────────────────────────
+        // ── User position indicator ──────────────────────────────────────────
         val px = padL + progressFraction * plotW
         canvas.drawLine(px, padT, px, h - padB, progressPaint)
         val nearIdx = ((progressFraction * (size - 1)).toInt()).coerceIn(0, size - 1)
-        canvas.drawCircle(px, yAt(nearIdx), 5f, dotPaint)
+        val dotY = yAt(nearIdx)
+        canvas.drawCircle(px, dotY, 9f, dotPaint)
+        // Show current elevation next to the dot (flip to left side if near the right edge)
+        val elevLabel = "%.0fm".format(m.elevations[nearIdx])
+        val labelX = if (px + 14f + markerLabelPaint.measureText(elevLabel) < w - padR)
+            px + 14f else px - 14f - markerLabelPaint.measureText(elevLabel)
+        canvas.drawText(elevLabel, labelX, dotY + markerLabelPaint.textSize / 3f, markerLabelPaint)
 
         // ── Elevation labels (right-aligned in left margin) ───────────────────
         labelPaint.textAlign = Paint.Align.RIGHT
