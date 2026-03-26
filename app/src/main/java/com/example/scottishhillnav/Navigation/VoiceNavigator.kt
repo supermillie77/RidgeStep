@@ -107,13 +107,64 @@ class VoiceNavigator(context: Context) : TextToSpeech.OnInitListener {
      * Pronounce a name on user request — always speaks even when navigation is muted.
      * Calls tts.speak() unconditionally; Android TTS returns ERROR (no crash) if not
      * yet initialised, so we don't need to gate on ttsInitialized here.
+     *
+     * The name is passed through [gaelicPhonetic] first so that Android TTS produces
+     * a reasonable approximation of Scottish Gaelic pronunciation rather than reading
+     * short particles as individual letters (e.g. "na" → "N A").
      */
     fun pronounce(text: String) {
         try {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "pronounce")
+            tts.speak(gaelicPhonetic(text), TextToSpeech.QUEUE_FLUSH, null, "pronounce")
         } catch (e: Exception) {
             Log.w(TAG, "TTS pronounce failed: ${e.message}")
         }
+    }
+
+    /**
+     * Converts Scottish Gaelic words and particles to phonetic approximations that
+     * Android TTS (British English) will pronounce intelligibly.
+     *
+     * Short Gaelic particles (na, nan, am, an) look like abbreviations to TTS and are
+     * read as individual letters. Lenited initials (Bh-, Mh-, Gh-, Dh-) are assigned
+     * their correct V / silent-or-Y sounds.  Accented vowels (à, è, ì, ò, ù) are
+     * stripped so TTS doesn't stumble over them.
+     */
+    private fun gaelicPhonetic(text: String): String {
+        var s = text
+        // ── Particles and articles (whole-word matches — must come before root words) ──
+        s = s.replace(Regex("\\bnan\\b",  RegexOption.IGNORE_CASE), "nahn")
+        s = s.replace(Regex("\\bna\\b",   RegexOption.IGNORE_CASE), "nah")
+        s = s.replace(Regex("\\bnam\\b",  RegexOption.IGNORE_CASE), "nahm")
+        // ── Lenited (mutated) initial consonants ──────────────────────────────────────
+        s = s.replace(Regex("\\bBheinn\\b", RegexOption.IGNORE_CASE), "Ven")
+        s = s.replace(Regex("\\bBheag\\b",  RegexOption.IGNORE_CASE), "Veck")
+        s = s.replace(Regex("\\bMh[oò]r\\b", RegexOption.IGNORE_CASE), "Wore")
+        s = s.replace(Regex("\\bMheall\\b", RegexOption.IGNORE_CASE), "Vyowl")
+        // ── Unmutated root words ──────────────────────────────────────────────────────
+        s = s.replace(Regex("\\bBeinn\\b",  RegexOption.IGNORE_CASE), "Ben")
+        s = s.replace(Regex("\\bBeag\\b",   RegexOption.IGNORE_CASE), "Beck")
+        s = s.replace(Regex("\\bMeall\\b",  RegexOption.IGNORE_CASE), "Myowl")
+        s = s.replace(Regex("\\bM[oò]r\\b", RegexOption.IGNORE_CASE), "More")
+        s = s.replace(Regex("\\bSg[uùú]rr\\b", RegexOption.IGNORE_CASE), "Skoor")
+        s = s.replace(Regex("\\bSg[oò]rr\\b",  RegexOption.IGNORE_CASE), "Skor")
+        s = s.replace(Regex("\\bDearg\\b",  RegexOption.IGNORE_CASE), "Jerack")
+        s = s.replace(Regex("\\bDubh\\b",   RegexOption.IGNORE_CASE), "Doo")
+        s = s.replace(Regex("\\bRuadh\\b",  RegexOption.IGNORE_CASE), "Roo-a")
+        s = s.replace(Regex("\\bLiath\\b",  RegexOption.IGNORE_CASE), "Lee-a")
+        s = s.replace(Regex("\\bGarbh\\b",  RegexOption.IGNORE_CASE), "Garv")
+        s = s.replace(Regex("\\bAonach\\b", RegexOption.IGNORE_CASE), "Oo-nach")
+        s = s.replace(Regex("\\bCoire\\b",  RegexOption.IGNORE_CASE), "Corra")
+        s = s.replace(Regex("\\bChoire\\b", RegexOption.IGNORE_CASE), "Chorra")
+        s = s.replace(Regex("\\bGleann\\b", RegexOption.IGNORE_CASE), "Glyown")
+        s = s.replace(Regex("\\bBealach\\b", RegexOption.IGNORE_CASE), "Byalach")
+        s = s.replace(Regex("\\bSr[oò]n\\b", RegexOption.IGNORE_CASE), "Strawn")
+        s = s.replace(Regex("\\bBidean\\b", RegexOption.IGNORE_CASE), "Bee-jen")
+        // ── Strip Gaelic accents so TTS doesn't stall on unknown characters ──────────
+        s = s.replace('à', 'a').replace('è', 'e').replace('ì', 'i')
+             .replace('ò', 'o').replace('ù', 'u')
+             .replace('À', 'A').replace('È', 'E').replace('Ì', 'I')
+             .replace('Ò', 'O').replace('Ù', 'U')
+        return s
     }
 
     fun shutdown() {
