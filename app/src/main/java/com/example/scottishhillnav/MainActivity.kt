@@ -1898,6 +1898,35 @@ class MainActivity : AppCompatActivity() {
 
     // ── Hill selection ────────────────────────────────────────────────────────
 
+    /**
+     * Builds a picker label for the "add another summit" list.
+     * Format: "Name, Area  1234m   (X.X km · ~Xh Xm)"
+     * Time uses Naismith's Rule: distance/speed + 1 hr per 600 m ascent.
+     * [fromLoc] is the user's current GPS position; if null, distance/time are omitted.
+     */
+    private fun summitEtaLabel(
+        result: HillSearchService.HillResult,
+        fromLoc: android.location.Location?
+    ): String {
+        val sb = StringBuilder(result.name)
+        if (result.area.isNotEmpty()) sb.append(", ${result.area}")
+        result.elevationM?.let { sb.append("  ${it}m") }
+        if (fromLoc != null) {
+            val distM  = haversine(fromLoc.latitude, fromLoc.longitude, result.lat, result.lon)
+            val distKm = distM / 1000.0
+            // Use GPS-reported speed if meaningful (≥ 1 km/h), otherwise assume 4 km/h.
+            val speedKmh = if (fromLoc.hasSpeed() && fromLoc.speed * 3.6 >= 1.0)
+                fromLoc.speed * 3.6 else 4.0
+            val currAlt  = if (fromLoc.hasAltitude()) fromLoc.altitude else 0.0
+            val ascentM  = maxOf(0.0, (result.elevationM?.toDouble() ?: currAlt) - currAlt)
+            val totalMins = (distKm / speedKmh * 60.0 + ascentM / 600.0 * 60.0).toInt()
+            val h = totalMins / 60; val m = totalMins % 60
+            val etaStr = if (h > 0) "~${h}h ${m}m" else "~${m}m"
+            sb.append("   (${"%.1f".format(distKm)} km · $etaStr)")
+        }
+        return sb.toString()
+    }
+
     private fun showHillSearch() {
         HillSearchService.clearAreaCache()
         val dp = resources.displayMetrics.density
@@ -2167,15 +2196,25 @@ class MainActivity : AppCompatActivity() {
                 statusText.text = "Could not find \"$areaName\" — check spelling"
                 radiusRow.visibility = View.GONE
             } else {
-                results.clear(); results.addAll(found.hills)
-                labels.clear(); labels.addAll(found.hills.map { h ->
-                    val distKm = haversine(h.lat, h.lon, found.areaLat, found.areaLon) / 1000.0
-                    val eleStr = h.elevationM?.let { "  ${it}m" } ?: ""
-                    "${h.name}$eleStr   (${"%.1f km".format(distKm)})"
+                val loc = if (addingSummit) lastLocation else null
+                // In "add summit" mode: sort by distance from user's current position.
+                val displayHills = if (loc != null)
+                    found.hills.sortedBy { haversine(loc.latitude, loc.longitude, it.lat, it.lon) }
+                else found.hills
+                results.clear(); results.addAll(displayHills)
+                labels.clear(); labels.addAll(displayHills.map { h ->
+                    if (loc != null) {
+                        summitEtaLabel(h, loc)
+                    } else {
+                        val distKm = haversine(h.lat, h.lon, found.areaLat, found.areaLon) / 1000.0
+                        val eleStr = h.elevationM?.let { "  ${it}m" } ?: ""
+                        "${h.name}$eleStr   (${"%.1f km".format(distKm)})"
+                    }
                 })
                 adapter.notifyDataSetChanged()
                 val count = found.hills.size
-                statusText.text = "$count hill${if (count != 1) "s" else ""} within ${"%.0f".format(miles)} miles of ${found.areaDisplayName}" +
+                val sortNote = if (loc != null) "  · nearest first" else ""
+                statusText.text = "$count hill${if (count != 1) "s" else ""} within ${"%.0f".format(miles)} miles of ${found.areaDisplayName}$sortNote" +
                     if (count == 0) " — try a wider radius" else ""
                 suggestContainer.visibility = View.GONE
                 radiusRow.visibility = View.VISIBLE
@@ -2231,8 +2270,15 @@ class MainActivity : AppCompatActivity() {
                             val found = try { HillSearchService.search(query) }
                                         catch (_: Exception) { emptyList() }
                             runOnUiThread {
-                                results.clear(); results.addAll(found)
-                                labels.clear(); labels.addAll(found.map { it.displayLabel })
+                                val loc = if (addingSummit) lastLocation else null
+                                // In "add summit" mode: sort nearest first and show Naismith ETAs.
+                                val displayFound = if (loc != null)
+                                    found.sortedBy { haversine(loc.latitude, loc.longitude, it.lat, it.lon) }
+                                else found
+                                results.clear(); results.addAll(displayFound)
+                                labels.clear(); labels.addAll(displayFound.map { r ->
+                                    if (loc != null) summitEtaLabel(r, loc) else r.displayLabel
+                                })
                                 adapter.notifyDataSetChanged()
                                 if (found.isEmpty()) {
                                     // No named hills — automatically try area search
@@ -2255,8 +2301,9 @@ class MainActivity : AppCompatActivity() {
                                         }
                                     }.start()
                                 } else {
+                                    val sortNote = if (loc != null) "  · nearest first" else ""
                                     statusText.text =
-                                        "${found.size} mountain${if (found.size != 1) "s" else ""} found"
+                                        "${found.size} mountain${if (found.size != 1) "s" else ""} found$sortNote"
                                     suggestContainer.visibility = View.GONE
                                 }
                             }
