@@ -126,6 +126,8 @@ class MainActivity : AppCompatActivity() {
     private var preferredRouteId : String? = null
     private lateinit var driveBanner: FrameLayout  // shown while driving to car park
     private lateinit var routingBanner: TextView   // shown on the map while route search is running
+    private lateinit var addSummitRow: LinearLayout // "＋ Add another hill" chip row in bottom sheet
+    private var addingSummit = false               // true when hill search is in "add waypoint" mode
 
     // Overpass routing graph cache — reused when switching between nearby car parks so we
     // don't make a fresh Overpass call (and hit rate-limits) for every car park selection.
@@ -450,10 +452,33 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
         }
 
+        // "＋ Add another hill" chip — shown when a route is active so the user can
+        // chain multiple summits (e.g. two Munros in one walk) without tapping the map.
+        addSummitRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, (resources.displayMetrics.density * 6).toInt(), 0, 0)
+            visibility = View.GONE
+        }
+        val addSummitChip = TextView(this).apply {
+            text = "＋  Add another hill"
+            textSize = 12f
+            setTextColor(0xFF4FC3F7.toInt())
+            setBackgroundColor(0xFF1A2A3A.toInt())
+            val p = (resources.displayMetrics.density * 10).toInt()
+            val pv = (resources.displayMetrics.density * 6).toInt()
+            setPadding(p, pv, p, pv)
+            setOnClickListener {
+                addingSummit = true
+                showHillSearch()
+            }
+        }
+        addSummitRow.addView(addSummitChip)
+
         sheetContent.addView(handle)
         sheetContent.addView(titleRow)
         sheetContent.addView(sheetSubtitle)
         sheetContent.addView(routeSelectorRow)
+        sheetContent.addView(addSummitRow)
         sheetContent.addView(primaryRow)
         sheetContent.addView(divider())
         sheetContent.addView(liveHeader)
@@ -1659,6 +1684,7 @@ class MainActivity : AppCompatActivity() {
     // ── Sheet updates ─────────────────────────────────────────────────────────
 
     private fun updateSheetForNoRoute() {
+        addSummitRow.visibility = View.GONE
         sheetTitle.text    = selectedHill?.let { "To: ${it.name}" } ?: "Route: —"
         hillPronounceBtn.visibility = if (selectedHill != null) View.VISIBLE else View.GONE
         sheetSubtitle.text = when {
@@ -1688,6 +1714,7 @@ class MainActivity : AppCompatActivity() {
         val grade      = RouteWarningPolicy.grade(r)
         val gradeLabel = RouteWarningPolicy.gradeLabel(grade)
 
+        addSummitRow.visibility = View.VISIBLE
         sheetTitle.text    = r.name
         hillPronounceBtn.visibility = if (selectedHill != null) View.VISIBLE else View.GONE
         sheetSubtitle.text = "$gradeLabel   •   ${r.shortDescription}   •   Tap ℹ for live stats"
@@ -1712,6 +1739,7 @@ class MainActivity : AppCompatActivity() {
         navPhase = NavPhase.IDLE
         selectedHill = null; selectedCarPark = null; preferredRouteId = null
         cachedOverpassRoutingGraph = null
+        addSummitRow.visibility = View.GONE
         routingBanner.visibility = View.GONE
         driveBanner.visibility = View.GONE
         voiceNavigator.clearInstructions()
@@ -1885,7 +1913,8 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(0xFF2A2A2A.toInt())
         }
         val searchInput = EditText(this).apply {
-            hint = "Mountain name, or 'Cairngorms hills'…"
+            hint = if (addingSummit) "Next summit name…"
+                   else "Mountain name, or 'Cairngorms hills'…"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                         android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS
             setTextColor(Color.WHITE)
@@ -1973,16 +2002,26 @@ class MainActivity : AppCompatActivity() {
         }
         listView.adapter = adapter
 
+        val dialogTitle = if (addingSummit) "Add another summit" else "Find a mountain or area"
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Find a mountain or area")
+            .setTitle(dialogTitle)
             .setView(container)
             .setNegativeButton("Cancel", null)
             .create()
-        dialog.setOnDismissListener { pendingVoiceTarget = null }
+        dialog.setOnDismissListener {
+            pendingVoiceTarget = null
+            addingSummit = false   // reset flag if user cancels
+        }
 
         listView.setOnItemClickListener { _, _, position, _ ->
             dialog.dismiss()
-            showRoutePickerOrProceed(results[position])
+            val picked = results[position]
+            if (addingSummit) {
+                addingSummit = false
+                addSummitToRoute(picked)
+            } else {
+                showRoutePickerOrProceed(picked)
+            }
         }
 
         // Populates "Did you mean?" as rows of 2 chips so they wrap neatly.
@@ -2231,6 +2270,20 @@ class MainActivity : AppCompatActivity() {
 
         dialog.show()
         searchInput.requestFocus()
+    }
+
+    /**
+     * Appends [result]'s summit as the next waypoint on the existing route.
+     * The current last tapPoint (previous summit) becomes an intermediate waypoint;
+     * the new summit becomes the new destination. No car park selection needed —
+     * the user is already walking from the original start point.
+     */
+    private fun addSummitToRoute(result: HillSearchService.HillResult) {
+        val summitPt = GeoPoint(result.lat, result.lon)
+        tapPoints.add(summitPt)
+        tapMarkers.add(addMarker(summitPt, result.name, 0xFFC62828.toInt()))
+        selectedHill = result   // update pronounce button + sheet title destination
+        buildRoutes()
     }
 
     /**
