@@ -2484,8 +2484,13 @@ class MainActivity : AppCompatActivity() {
 
         if (startPt != null) {
             // Add start pin first, then summit — tapPoints[0]=start, tapPoints[1]=summit
+            val startLabel = when {
+                cp != null && !cpIsAtSummit -> cp.name
+                gpsPt != null               -> "My Location"
+                else                        -> "Start"
+            }
             tapPoints.add(startPt)
-            tapMarkers.add(addMarker(startPt, "Start", 0xFF2E7D32.toInt()))
+            tapMarkers.add(addMarker(startPt, startLabel, 0xFF2E7D32.toInt()))
             tapPoints.add(summitPt)
             tapMarkers.add(addMarker(summitPt, hill.name, 0xFFC62828.toInt()))
             // Centre map between both pins
