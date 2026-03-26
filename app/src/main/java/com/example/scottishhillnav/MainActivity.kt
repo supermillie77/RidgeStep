@@ -1968,6 +1968,11 @@ class MainActivity : AppCompatActivity() {
         var currentAreaName: String? = null
         var currentRadiusMiles = 5.0
 
+        // Declared as var before updateRadiusChips so the chip lambdas can capture it by
+        // reference. The real body is assigned below, after updateRadiusChips is defined.
+        var applyAreaResults: (HillSearchService.NearbyHillsResult?, String, Double) -> Unit =
+            { _, _, _ -> }
+
         // Pattern: "hills near aviemore", "munros in fort william", "peaks around glen coe", etc.
         val areaPattern = Regex(
             """^(?:hills?|munros?|corbetts?|grahams?|peaks?|walks?|mountains?)\s+(?:near|in|around|close to|by)\s+(.+)$""",
@@ -2048,27 +2053,26 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
-        fun applyAreaResults(found: HillSearchService.NearbyHillsResult?, areaName: String, miles: Double) {
+        // Real implementation — assigned after updateRadiusChips so it can safely call it.
+        applyAreaResults = { found, areaName, miles ->
             if (found == null) {
                 statusText.text = "Could not find \"$areaName\" — check spelling"
                 radiusRow.visibility = View.GONE
-                return
+            } else {
+                results.clear(); results.addAll(found.hills)
+                labels.clear(); labels.addAll(found.hills.map { h ->
+                    val distKm = haversine(h.lat, h.lon, found.areaLat, found.areaLon) / 1000.0
+                    val eleStr = h.elevationM?.let { "  ${it}m" } ?: ""
+                    "${h.name}$eleStr   (${"%.1f km".format(distKm)})"
+                })
+                adapter.notifyDataSetChanged()
+                val count = found.hills.size
+                statusText.text = "$count hill${if (count != 1) "s" else ""} within ${"%.0f".format(miles)} miles of ${found.areaDisplayName}" +
+                    if (count == 0) " — try a wider radius" else ""
+                suggestContainer.visibility = View.GONE
+                radiusRow.visibility = View.VISIBLE
+                updateRadiusChips(miles)
             }
-            results.clear(); results.addAll(found.hills)
-            labels.clear(); labels.addAll(found.hills.map { h ->
-                val distKm = haversine(h.lat, h.lon, found.areaLat, found.areaLon) / 1000.0
-                val distStr = "%.1f km".format(distKm)
-                val eleStr = h.elevationM?.let { "  ${it}m" } ?: ""
-                "${h.name}$eleStr   ($distStr)"
-            })
-            adapter.notifyDataSetChanged()
-            val milesLabel = "%.0f miles".format(miles)
-            val count = found.hills.size
-            statusText.text = "$count hill${if (count != 1) "s" else ""} within $milesLabel of ${found.areaDisplayName}" +
-                if (count == 0) " — try a wider radius" else ""
-            suggestContainer.visibility = View.GONE
-            radiusRow.visibility = View.VISIBLE
-            updateRadiusChips(miles)
         }
 
         val searchHandler = Handler(Looper.getMainLooper())
