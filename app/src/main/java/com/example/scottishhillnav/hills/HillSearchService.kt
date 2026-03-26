@@ -263,33 +263,54 @@ object HillSearchService {
         } catch (e: Exception) { /* continue */ }
 
         // ── Query 3: water polygons for cross-water barrier detection ─────────
-        // Fetch natural=water polygons (lochs, reservoirs) so we can exclude car parks
-        // whose straight line to the summit crosses a water body (e.g. A82 / Firkin Point
-        // on the west side of Loch Lomond when the hill is on the east side).
+        // Fetch natural=water polygons so we can exclude car parks whose midpoint
+        // to the summit crosses a water body (e.g. wrong side of a loch).
+        // Both ways AND relations are queried: large Scottish lochs (Loch Ness,
+        // Loch Tay, Loch Earn, Loch Katrine, etc.) are multipolygon relations in
+        // OSM and would be missed if only ways were fetched.
         val waterPolygons = mutableListOf<List<Pair<Double, Double>>>()
         try {
             val q = URLEncoder.encode(
-                "[out:json][timeout:30];" +
-                    "way[\"natural\"=\"water\"](around:25000,$lat,$lon);" +
+                "[out:json][timeout:45];" +
+                    "(way[\"natural\"=\"water\"](around:25000,$lat,$lon);" +
+                    "relation[\"natural\"=\"water\"](around:25000,$lat,$lon););" +
                     "out geom;",
                 "UTF-8"
             )
             val conn = URL("https://overpass-api.de/api/interpreter?data=$q")
                 .openConnection() as HttpURLConnection
             conn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
-            conn.connectTimeout = 30_000; conn.readTimeout = 30_000
+            conn.connectTimeout = 45_000; conn.readTimeout = 45_000
             val elements = try {
                 JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("elements")
             } finally { conn.disconnect() }
-            for (i in 0 until elements.length()) {
-                val el = elements.getJSONObject(i)
-                val geometry = el.optJSONArray("geometry") ?: continue
-                if (geometry.length() < 3) continue
+
+            fun addGeometry(geometry: org.json.JSONArray) {
+                if (geometry.length() < 3) return
                 val polygon = (0 until geometry.length()).map { j ->
                     val pt = geometry.getJSONObject(j)
                     pt.getDouble("lat") to pt.getDouble("lon")
                 }
                 waterPolygons.add(polygon)
+            }
+
+            for (i in 0 until elements.length()) {
+                val el = elements.getJSONObject(i)
+                when (el.optString("type")) {
+                    "way" -> {
+                        // Simple water polygon — geometry array directly on element
+                        el.optJSONArray("geometry")?.let { addGeometry(it) }
+                    }
+                    "relation" -> {
+                        // Multipolygon relation — geometry is on each outer member way
+                        val members = el.optJSONArray("members") ?: continue
+                        for (m in 0 until members.length()) {
+                            val member = members.getJSONObject(m)
+                            if (member.optString("role") != "outer") continue
+                            member.optJSONArray("geometry")?.let { addGeometry(it) }
+                        }
+                    }
+                }
             }
         } catch (e: Exception) { /* continue without water filtering */ }
 
