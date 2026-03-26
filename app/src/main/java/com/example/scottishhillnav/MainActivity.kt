@@ -1804,6 +1804,7 @@ class MainActivity : AppCompatActivity() {
     // ── Hill selection ────────────────────────────────────────────────────────
 
     private fun showHillSearch() {
+        HillSearchService.clearAreaCache()
         val dp = resources.displayMetrics.density
 
         val container = LinearLayout(this).apply {
@@ -2128,28 +2129,25 @@ class MainActivity : AppCompatActivity() {
                                 labels.clear(); labels.addAll(found.map { it.displayLabel })
                                 adapter.notifyDataSetChanged()
                                 if (found.isEmpty()) {
-                                    statusText.text = "No mountains found for \"$query\""
-                                    showSuggestions(query)
-                                    // Offer area search as a prominent suggestion
-                                    suggestContainer.addView(TextView(this@MainActivity).apply {
-                                        text = "🔍  Hills near \"$query\"…"
-                                        textSize = 13f
-                                        setTextColor(0xFF4FC3F7.toInt())
-                                        setBackgroundColor(0xFF1A2A3A.toInt())
-                                        setPadding(
-                                            (dp * 10).toInt(), (dp * 8).toInt(),
-                                            (dp * 10).toInt(), (dp * 8).toInt()
-                                        )
-                                        setOnClickListener {
-                                            val areaQuery = "hills near $query"
-                                            searchInput.setText(areaQuery)
-                                            searchInput.setSelection(areaQuery.length)
+                                    // No named hills — automatically try area search
+                                    currentAreaName = query
+                                    statusText.text = "Searching hills near \"$query\"…"
+                                    Thread {
+                                        val areaFound = try {
+                                            HillSearchService.searchHillsNearArea(query, currentRadiusMiles * 1.60934)
+                                        } catch (_: Exception) { null }
+                                        runOnUiThread {
+                                            if (areaFound != null) {
+                                                // Area geocoded — show results (may be 0 with "try wider" hint)
+                                                applyAreaResults(areaFound, query, currentRadiusMiles)
+                                            } else {
+                                                currentAreaName = null
+                                                statusText.text = "No mountains found for \"$query\""
+                                                showSuggestions(query)
+                                                suggestContainer.visibility = View.VISIBLE
+                                            }
                                         }
-                                    }, LinearLayout.LayoutParams(
-                                        LinearLayout.LayoutParams.MATCH_PARENT,
-                                        LinearLayout.LayoutParams.WRAP_CONTENT
-                                    ).apply { topMargin = (dp * 6).toInt() })
-                                    suggestContainer.visibility = View.VISIBLE
+                                    }.start()
                                 } else {
                                     statusText.text =
                                         "${found.size} mountain${if (found.size != 1) "s" else ""} found"

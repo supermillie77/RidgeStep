@@ -42,6 +42,7 @@ object HillSearchService {
     private const val ROWARDENNAN_LON = -4.6431
 
     fun clearCache() = carParkCache.clear()
+    fun clearAreaCache() { areaHillsCache = null }
 
     data class HillResult(
         val name: String,
@@ -147,11 +148,20 @@ object HillSearchService {
         val hills: List<HillResult>  // sorted nearest-first from area centre
     )
 
+    // Cache: avoid repeated Overpass calls when the user adjusts the radius slider.
+    // Keyed on geocoded lat/lon; holds ALL hills within FETCH_RADIUS_KM.
+    private data class AreaCache(
+        val lat: Double, val lon: Double,
+        val displayName: String,
+        val allHills: List<HillResult>   // full 40 km fetch, unfiltered
+    )
+    private var areaHillsCache: AreaCache? = null
+
     /**
-     * Geocodes [areaName] via Nominatim, then queries Overpass for hills/peaks within
-     * [radiusKm] kilometres. Returns null if the area name cannot be geocoded.
-     * Hills are sorted by distance from the area centre and same-name duplicates are
-     * disambiguated by elevation.
+     * Geocodes [areaName] via Nominatim, then returns hills/peaks within [radiusKm].
+     * The first call for a given area fetches from Overpass (up to 40 km); subsequent
+     * calls with different radii are served from cache — no extra network calls.
+     * Returns null if the area name cannot be geocoded.
      */
     fun searchHillsNearArea(areaName: String, radiusKm: Double = 8.05): NearbyHillsResult? {
         // 1. Geocode the place name
@@ -174,48 +184,60 @@ object HillSearchService {
             .split(",").firstOrNull()?.trim()
             ?: areaName.replaceFirstChar { it.uppercaseChar() }
 
-        // 2. Overpass: all named peaks, hills, and ridges within the radius
-        val radiusM = (radiusKm * 1000).toInt()
-        val opQuery =
-            "[out:json][timeout:25];" +
-            "(node[\"natural\"=\"peak\"](around:$radiusM,$areaLat,$areaLon);" +
-            "node[\"natural\"=\"hill\"](around:$radiusM,$areaLat,$areaLon);" +
-            "node[\"natural\"=\"ridge\"](around:$radiusM,$areaLat,$areaLon););" +
-            "out tags;"
-        val opBody = "data=${URLEncoder.encode(opQuery, "UTF-8")}"
-        val opConn = URL("https://overpass-api.de/api/interpreter").openConnection()
-            as HttpURLConnection
-        opConn.requestMethod = "POST"; opConn.doOutput = true
-        opConn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-        opConn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
-        opConn.connectTimeout = 12_000; opConn.readTimeout = 30_000
-        opConn.outputStream.write(opBody.toByteArray(Charsets.UTF_8))
-        val elements = try {
-            JSONObject(opConn.inputStream.bufferedReader().readText()).optJSONArray("elements")
-        } catch (_: Exception) { null }
-        finally { opConn.disconnect() }
+        // 2. Use cache if available for the same geocoded location
+        val cached = areaHillsCache
+        val allHills: List<HillResult> = if (cached != null &&
+            Math.abs(cached.lat - areaLat) < 0.01 &&
+            Math.abs(cached.lon - areaLon) < 0.01) {
+            cached.allHills
+        } else {
+            // 3. Overpass: fetch everything within 40 km once, cache it
+            val fetchRadiusM = 40_000
+            val opQuery =
+                "[out:json][timeout:30];" +
+                "(node[\"natural\"=\"peak\"](around:$fetchRadiusM,$areaLat,$areaLon);" +
+                "node[\"natural\"=\"hill\"](around:$fetchRadiusM,$areaLat,$areaLon);" +
+                "node[\"natural\"=\"ridge\"](around:$fetchRadiusM,$areaLat,$areaLon);" +
+                "way[\"natural\"=\"peak\"](around:$fetchRadiusM,$areaLat,$areaLon););" +
+                "out center tags;"
+            val opConn = URL(
+                "https://overpass-api.de/api/interpreter?data=${URLEncoder.encode(opQuery, "UTF-8")}"
+            ).openConnection() as HttpURLConnection
+            opConn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
+            opConn.connectTimeout = 12_000; opConn.readTimeout = 30_000
+            val elements = try {
+                JSONObject(opConn.inputStream.bufferedReader().readText()).optJSONArray("elements")
+            } catch (_: Exception) { null }
+            finally { opConn.disconnect() }
 
-        val hills = mutableListOf<HillResult>()
-        if (elements != null) {
-            for (i in 0 until elements.length()) {
-                val el   = elements.getJSONObject(i)
-                val lat  = el.optDouble("lat").takeIf { !it.isNaN() && it != 0.0 } ?: continue
-                val lon  = el.optDouble("lon").takeIf { !it.isNaN() && it != 0.0 } ?: continue
-                val tags = el.optJSONObject("tags") ?: continue
-                val name = tags.optString("name").takeIf { it.isNotEmpty() }
-                    ?: tags.optString("name:en").takeIf { it.isNotEmpty() }
-                    ?: continue
-                val ele = tags.optString("ele").toDoubleOrNull()?.toInt()
-                if (hills.none { it.name == name &&
-                        Math.abs(it.lat - lat) < 0.001 && Math.abs(it.lon - lon) < 0.001 }) {
-                    hills.add(HillResult(name = name, area = areaDisplayName,
-                                         lat = lat, lon = lon, elevationM = ele))
+            val hills = mutableListOf<HillResult>()
+            if (elements != null) {
+                for (i in 0 until elements.length()) {
+                    val el   = elements.getJSONObject(i)
+                    val lat  = (if (el.has("center")) el.getJSONObject("center").optDouble("lat")
+                                else el.optDouble("lat")).takeIf { !it.isNaN() && it != 0.0 } ?: continue
+                    val lon  = (if (el.has("center")) el.getJSONObject("center").optDouble("lon")
+                                else el.optDouble("lon")).takeIf { !it.isNaN() && it != 0.0 } ?: continue
+                    val tags = el.optJSONObject("tags") ?: continue
+                    val name = tags.optString("name").takeIf { it.isNotEmpty() }
+                        ?: tags.optString("name:en").takeIf { it.isNotEmpty() }
+                        ?: continue
+                    val ele = tags.optString("ele").toDoubleOrNull()?.toInt()
+                    if (hills.none { it.name == name &&
+                            Math.abs(it.lat - lat) < 0.001 && Math.abs(it.lon - lon) < 0.001 }) {
+                        hills.add(HillResult(name = name, area = areaDisplayName,
+                                             lat = lat, lon = lon, elevationM = ele))
+                    }
                 }
             }
+            areaHillsCache = AreaCache(areaLat, areaLon, areaDisplayName, hills)
+            hills
         }
 
-        // Sort by distance from area centre, then disambiguate same-name hills by elevation
-        val sorted = hills.sortedBy { haversine(it.lat, it.lon, areaLat, areaLon) }
+        // 4. Filter to requested radius, sort nearest-first, disambiguate same-name hills
+        val radiusM = radiusKm * 1000.0
+        val filtered = allHills.filter { haversine(it.lat, it.lon, areaLat, areaLon) <= radiusM }
+        val sorted = filtered.sortedBy { haversine(it.lat, it.lon, areaLat, areaLon) }
         val nameGroups = sorted.groupBy { it.name }
         val final = sorted.map { r ->
             val group = nameGroups[r.name]!!
