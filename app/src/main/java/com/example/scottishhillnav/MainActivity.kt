@@ -924,7 +924,8 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     routeCandidates += found
                     if (routeCandidates.isEmpty()) {
-                        sheetTitle.text = "No route found"
+                        sheetTitle.text    = "No mapped path found"
+                        sheetSubtitle.text = "No footpath data available for this area. Try a different start or destination."
                     } else {
                         // Select preferred route if the user picked one before the car park
                         val pref = preferredRouteId
@@ -934,6 +935,19 @@ class MainActivity : AppCompatActivity() {
                         }
                         drawActiveRoute(); buildNavigationIndex(); updateSheetForActiveRoute()
                         checkWaypointsOnRoute()
+                        // Show liability acknowledgement if the auto-selected route requires it
+                        val activeRoute = routeCandidates.getOrNull(activeIndex)
+                        if (activeRoute != null) {
+                            val grade = RouteWarningPolicy.grade(activeRoute)
+                            if (RouteWarningPolicy.requiresAcknowledgement(grade)) {
+                                AlertDialog.Builder(this@MainActivity)
+                                    .setTitle(RouteWarningPolicy.gradeLabel(grade))
+                                    .setMessage(RouteWarningPolicy.liabilityText(grade))
+                                    .setPositiveButton("I understand — continue", null)
+                                    .setNegativeButton("Go back") { _, _ -> clearRoutes() }
+                                    .show()
+                            }
+                        }
                     }
                     map.invalidate()
                 }
@@ -1023,28 +1037,8 @@ class MainActivity : AppCompatActivity() {
             val VSTART = -1
             val VEND   = -2
 
-            // If Overpass is unavailable or returns no data, give the user a straight-line
-            // route so the map always shows something between their two pins.
-            if (overpassGraph == null) {
-                val fbNodes = graph.nodes.toMutableMap()
-                fbNodes[VSTART] = Node(start.latitude, start.longitude, 0.0)
-                fbNodes[VEND]   = Node(end.latitude,   end.longitude,   0.0)
-                val fbEdges = graph.edges.toMutableMap()
-                val fbDist  = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
-                fbEdges[VSTART] = listOf(Edge(to = VEND, cost = fbDist, requiredMask = Capability.WALKING))
-                val fbGraph = Graph(nodes = fbNodes, edges = fbEdges, landmarks = graph.landmarks)
-                graph = fbGraph; router = AStarRouter(fbGraph)
-                metricsCalculator = RouteMetricsCalculator(fbGraph)
-                candidateGenerator = RouteCandidateGenerator(fbGraph, router, metricsCalculator)
-                return listOf(RouteCandidate(
-                    id = "direct", familyId = "direct_family", name = "Direct Route",
-                    shortDescription = "Straight line — map data unavailable",
-                    nodeIds = listOf(VSTART, VEND),
-                    metrics = metricsCalculator.calculate(listOf(VSTART, VEND)),
-                    difficultyProfile = DifficultyProfile(p95Slope = 0.0),
-                    warnings = emptyList(), isSelectable = true
-                ))
-            }
+            // If Overpass is unavailable or returns no data, report no route.
+            if (overpassGraph == null) return emptyList()
 
             // Snap start/end pins to the nearest path-network nodes with edges.
             // We connect VSTART and VEND to the 5 closest nodes each so that A*
@@ -1064,27 +1058,9 @@ class MainActivity : AppCompatActivity() {
             val startSnaps = snapEdgesTo(start.latitude, start.longitude)
             val endSnaps   = snapEdgesTo(end.latitude,   end.longitude)
 
-            // No nearby path nodes at all — straight-line fallback
-            if (startSnaps.isEmpty() || endSnaps.isEmpty()) {
-                val fbNodes = graph.nodes.toMutableMap()
-                fbNodes[VSTART] = Node(start.latitude, start.longitude, 0.0)
-                fbNodes[VEND]   = Node(end.latitude,   end.longitude,   0.0)
-                val fbEdges = graph.edges.toMutableMap()
-                val fbDist  = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
-                fbEdges[VSTART] = listOf(Edge(to = VEND, cost = fbDist, requiredMask = Capability.WALKING))
-                val fbGraph = Graph(nodes = fbNodes, edges = fbEdges, landmarks = graph.landmarks)
-                graph = fbGraph; router = AStarRouter(fbGraph)
-                metricsCalculator = RouteMetricsCalculator(fbGraph)
-                candidateGenerator = RouteCandidateGenerator(fbGraph, router, metricsCalculator)
-                return listOf(RouteCandidate(
-                    id = "direct", familyId = "direct_family", name = "Direct Route",
-                    shortDescription = "Straight line — no paths mapped in this area",
-                    nodeIds = listOf(VSTART, VEND),
-                    metrics = metricsCalculator.calculate(listOf(VSTART, VEND)),
-                    difficultyProfile = DifficultyProfile(p95Slope = 0.0),
-                    warnings = emptyList(), isSelectable = true
-                ))
-            }
+            // No nearby path nodes at all — no route available
+            if (startSnaps.isEmpty() || endSnaps.isEmpty()) return emptyList()
+
 
             val snapNodes = (bundledGraph.nodes + overpassGraph.nodes).toMutableMap()
             snapNodes[VSTART] = Node(start.latitude, start.longitude, 0.0)
@@ -1149,12 +1125,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // ── Fallback 2: straight-line route ──────────────────────────────
-            // If the network is so fragmented that even bridging fails, draw a direct
-            // line from start to end. This always succeeds and still gives distance/bearing.
-            val routeSucceeded = result != null && result.nodeIds.size >= 2
-            val routeNodeIds   = if (routeSucceeded) result!!.nodeIds else listOf(VSTART, VEND)
-            val isStraightLine = !routeSucceeded
+            // If the network is so fragmented that even bridging fails, report no route.
+            if (result == null || result.nodeIds.size < 2) return emptyList()
 
             // Promote snap graph so overlay and navigation resolve all node IDs correctly
             graph             = Graph(nodes = snapNodes, edges = snapEdges, landmarks = graph.landmarks)
@@ -1162,13 +1134,12 @@ class MainActivity : AppCompatActivity() {
             metricsCalculator = RouteMetricsCalculator(graph)
             candidateGenerator = RouteCandidateGenerator(graph, router, metricsCalculator)
 
-            val metrics = metricsCalculator.calculate(routeNodeIds)
+            val metrics = metricsCalculator.calculate(result.nodeIds)
             return listOf(RouteCandidate(
                 id = "direct", familyId = "direct_family",
-                name = "Direct Route",
-                shortDescription = if (isStraightLine) "Straight line — no mapped path found"
-                                   else "Best available path",
-                nodeIds = routeNodeIds, metrics = metrics,
+                name = "Best available path",
+                shortDescription = "Overpass footpath route",
+                nodeIds = result.nodeIds, metrics = metrics,
                 difficultyProfile = DifficultyProfile(p95Slope = 0.0),
                 warnings = emptyList(), isSelectable = true
             ))
@@ -1198,7 +1169,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Direct A* on bundled graph — falls through to straight-line if it fails
+        // Direct A* on bundled graph — tries Overpass retry if this fails
         val bundledResult = if (sId != eId) router.routeWithCapabilities(
             sId, eId, Capability.ALL, emptySet(), emptySet()
         ) else null
@@ -1277,32 +1248,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // ── Straight-line last-resort ─────────────────────────────────────────
-        // Both bundled A* and Overpass failed — draw a direct line so the user
-        // always sees something between their two pins.
-        val VSTART = -1; val VEND = -2
-        val fbNodes = graph.nodes.toMutableMap()
-        fbNodes[VSTART] = Node(start.latitude, start.longitude, 0.0)
-        fbNodes[VEND]   = Node(end.latitude,   end.longitude,   0.0)
-        val fbEdges = graph.edges.toMutableMap()
-        val fbDist  = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
-        fbEdges[VSTART] = listOf(Edge(to = VEND, cost = fbDist, requiredMask = Capability.WALKING))
-        val fbGraph = Graph(nodes = fbNodes, edges = fbEdges, landmarks = graph.landmarks)
-        graph             = fbGraph
-        router            = AStarRouter(fbGraph)
-        metricsCalculator = RouteMetricsCalculator(fbGraph)
-        candidateGenerator = RouteCandidateGenerator(fbGraph, router, metricsCalculator)
-        val fbMetrics = metricsCalculator.calculate(listOf(VSTART, VEND))
-        return listOf(RouteCandidate(
-            id = "direct", familyId = "direct_family",
-            name = "Direct Route",
-            shortDescription = "Straight line — no mapped path found",
-            nodeIds = listOf(VSTART, VEND),
-            metrics = fbMetrics,
-            difficultyProfile = DifficultyProfile(p95Slope = 0.0),
-            warnings = emptyList(),
-            isSelectable = true
-        ))
+        // Both bundled A* and Overpass failed — no mapped path available.
+        return emptyList()
     }
 
     private fun buildWaypointRoute(points: List<GeoPoint>): List<RouteCandidate> {
@@ -1316,8 +1263,8 @@ class MainActivity : AppCompatActivity() {
 
         if (!anyRemote) {
             // Build snap graph as the union of bundled + active graph. This ensures:
-            //  a) Bundled road/path nodes are always present (handles straight-line fallback
-            //     where graph only contains virtual nodes -1/-2).
+            //  a) Bundled road/path nodes are always present (handles the case where
+            //     graph only contains virtual nodes -1/-2 from a previous route).
             //  b) Any Overpass footpath nodes promoted into graph are also available,
             //     allowing A* to route via downloaded mountain paths.
             val snapNodes = (bundledGraph.nodes + graph.nodes).toMutableMap()
@@ -1428,35 +1375,8 @@ class MainActivity : AppCompatActivity() {
             OverpassGraphBuilder.buildForArea(midLat, midLon, radius)
         } catch (e: Exception) { null }
 
-        // If Overpass unavailable, build a straight-line route through all waypoints.
-        if (overpassGraph == null) {
-            val fbNodes = graph.nodes.toMutableMap()
-            val fbEdges = graph.edges.toMutableMap()
-            val vIds = points.mapIndexed { i, p ->
-                val vid = -(10 + i)
-                fbNodes[vid] = Node(p.latitude, p.longitude, 0.0)
-                vid
-            }
-            for (i in 0 until points.size - 1) {
-                val d = haversine(points[i].latitude, points[i].longitude,
-                                  points[i + 1].latitude, points[i + 1].longitude)
-                fbEdges[vIds[i]] = listOf(Edge(to = vIds[i + 1], cost = d, requiredMask = Capability.WALKING))
-                fbEdges[vIds[i + 1]] = (fbEdges[vIds[i + 1]] ?: emptyList()) +
-                    Edge(to = vIds[i], cost = d, requiredMask = Capability.WALKING)
-            }
-            val fbGraph = Graph(nodes = fbNodes, edges = fbEdges, landmarks = graph.landmarks)
-            graph = fbGraph; router = AStarRouter(fbGraph)
-            metricsCalculator = RouteMetricsCalculator(fbGraph)
-            candidateGenerator = RouteCandidateGenerator(fbGraph, router, metricsCalculator)
-            val wps = points.size - 2
-            return listOf(RouteCandidate(
-                id = "waypoint_route", familyId = "waypoint_family", name = "Custom Route",
-                shortDescription = "Via $wps waypoint${if (wps != 1) "s" else ""} (straight line)",
-                nodeIds = vIds, metrics = metricsCalculator.calculate(vIds),
-                difficultyProfile = DifficultyProfile(p95Slope = 0.0),
-                warnings = emptyList(), isSelectable = true
-            ))
-        }
+        // If Overpass unavailable, report no route rather than drawing a straight line.
+        if (overpassGraph == null) return emptyList()
 
         // Snap each point to the Overpass graph using unique virtual node IDs (-10, -11, …).
         val snapNodes = (bundledGraph.nodes + overpassGraph.nodes).toMutableMap()
@@ -1508,7 +1428,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (fullPath.isEmpty()) return emptyList()
 
-        // Promote final snap graph (includes any straight-line fallback edges added in the loop).
+        // Promote final snap graph so overlay and navigation resolve all node IDs correctly.
         val finalGraph    = Graph(nodes = snapNodes, edges = snapEdges, landmarks = graph.landmarks)
         graph             = finalGraph
         router            = AStarRouter(finalGraph)
@@ -1585,11 +1505,25 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(Color.WHITE)
                 setOnClickListener {
                     if (activeIndex != i) {
-                        activeIndex = i
-                        drawActiveRoute()
-                        buildNavigationIndex()
-                        updateSheetForActiveRoute()
-                        map.invalidate()
+                        val grade = RouteWarningPolicy.grade(candidate)
+                        if (RouteWarningPolicy.requiresAcknowledgement(grade)) {
+                            AlertDialog.Builder(this@MainActivity)
+                                .setTitle(RouteWarningPolicy.gradeLabel(grade))
+                                .setMessage(RouteWarningPolicy.liabilityText(grade))
+                                .setPositiveButton("I understand — continue") { _, _ ->
+                                    activeIndex = i
+                                    drawActiveRoute(); buildNavigationIndex()
+                                    updateSheetForActiveRoute(); map.invalidate()
+                                }
+                                .setNegativeButton("Choose a different route", null)
+                                .show()
+                        } else {
+                            activeIndex = i
+                            drawActiveRoute()
+                            buildNavigationIndex()
+                            updateSheetForActiveRoute()
+                            map.invalidate()
+                        }
                     }
                 }
             }
@@ -1638,9 +1572,12 @@ class MainActivity : AppCompatActivity() {
         val min = m.estimatedTimeMinutes % 60
         val time = if (h > 0) "${h}h ${min}m" else "${min}m"
 
+        val grade      = RouteWarningPolicy.grade(r)
+        val gradeLabel = RouteWarningPolicy.gradeLabel(grade)
+
         sheetTitle.text    = r.name
         hillPronounceBtn.visibility = if (selectedHill != null) View.VISIBLE else View.GONE
-        sheetSubtitle.text = "${r.shortDescription}   •   Tap ℹ for live stats"
+        sheetSubtitle.text = "$gradeLabel   •   ${r.shortDescription}   •   Tap ℹ for live stats"
         statDistance.text  = "Distance\n%.1f km".format(m.distanceMeters / 1000.0)
         statAscent.text    = "Ascent\n%.0f m".format(m.ascentMeters)
         statTime.text      = "Time\n$time"

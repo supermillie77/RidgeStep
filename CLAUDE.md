@@ -206,6 +206,57 @@ WalkHighlands includes per-hill pronunciation. Common patterns:
 
 ---
 
+## Route safety and developer liability policy
+
+### Principle
+
+The app provides navigation assistance only. It does NOT guarantee safe passage. Users accept full
+personal responsibility for their safety by using the app. This policy must be preserved in all
+future development.
+
+### No straight-line fallback routes
+
+**Straight-line routes between two pins must never be shown to users.** A straight line across a
+map conveys no real navigational information and may mislead walkers into attempting terrain that
+is impassable or dangerous. If no mapped footpath can be found (bundled graph or Overpass), the
+app must show "No mapped path found" and invite the user to try a different start or destination.
+
+Prohibited patterns in code:
+- `RouteCandidate` with `nodeIds = listOf(VSTART, VEND)` (direct virtual-node edge)
+- `shortDescription` containing "Straight line"
+- Any fallback that connects two pins with a single direct edge
+
+### Difficulty grading (`RouteWarningPolicy`)
+
+Every route is graded by `RouteWarningPolicy.grade()` before display:
+
+| Grade | When applied | Shown as |
+|---|---|---|
+| `MODERATE_WALK` | p95Slope < 25° and no special ID | 🟢 Moderate hillwalk |
+| `STRENUOUS_WALK` | p95Slope ≥ 25° | 🟠 Strenuous hillwalk |
+| `SCRAMBLE` | p95Slope ≥ 55°, or route ID in `SCRAMBLE_ROUTE_IDS` | ⚠️ Scramble — experienced hillwalkers only |
+| `TECHNICAL_CLIMB` | route ID in `TECHNICAL_ROUTE_IDS` | 🔴 Technical climb — specialist gear required |
+
+Known IDs: `SCRAMBLE_ROUTE_IDS = {"cmd", "lomond_ptarmigan"}`, `TECHNICAL_ROUTE_IDS = {"ledge"}`.
+
+The grade label is shown in the bottom-sheet subtitle alongside the route description.
+
+### Liability acknowledgement dialog
+
+Routes graded `SCRAMBLE` or `TECHNICAL_CLIMB` require the user to actively acknowledge the risks
+before proceeding. The dialog is shown:
+
+1. Automatically when a route at that grade is first loaded (auto-selected from `buildRoutes()`).
+2. When the user taps a route chip to switch to a higher-grade route.
+
+The dialog text is provided by `RouteWarningPolicy.liabilityText(grade)` and includes a full
+disclaimer that the app provides navigation assistance only and accepts no liability for incidents.
+The user must tap "I understand — continue" to proceed, or "Go back" to clear the route.
+
+**Never bypass or remove this dialog for high-grade routes.**
+
+---
+
 ## Files that should NOT be committed to GitHub
 
 Add to `.gitignore`:
