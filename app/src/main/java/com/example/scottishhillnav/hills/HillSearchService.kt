@@ -107,12 +107,33 @@ object HillSearchService {
                 }
                 val ele = obj.optJSONObject("extratags")?.optString("ele")
                     ?.toDoubleOrNull()?.toInt()
-                // Deduplicate by name+area
-                if (results.none { it.name == name && it.area == area }) {
+                // Deduplicate by name + approximate location (≤100 m).
+                // Using coordinates rather than area keeps genuinely distinct hills that
+                // share a name (e.g. two separate Sgurr Mòr peaks in different glens).
+                if (results.none { it.name == name &&
+                        Math.abs(it.lat - lat) < 0.001 &&
+                        Math.abs(it.lon - lon) < 0.001 }) {
                     results.add(HillResult(name, area, lat, lon, isRoute, ele))
                 }
             }
-            results
+            // Post-process: ensure same-name hills have distinguishable labels.
+            // If their areas are not all unique and non-empty, append elevation
+            // (or latitude as a last resort) so the user can tell them apart.
+            val nameGroups = results.groupBy { it.name }
+            results.map { r ->
+                val group = nameGroups[r.name]!!
+                if (group.size <= 1) r
+                else {
+                    val areasOk = group.all { it.area.isNotEmpty() } &&
+                                  group.map { it.area }.toSet().size == group.size
+                    if (areasOk) r
+                    else {
+                        val disambig = r.elevationM?.let { "${it}m" }
+                            ?: "%.2f°N".format(r.lat)
+                        r.copy(area = r.area.ifEmpty { "Highland" } + " · $disambig")
+                    }
+                }
+            }
         } finally {
             conn.disconnect()
         }
