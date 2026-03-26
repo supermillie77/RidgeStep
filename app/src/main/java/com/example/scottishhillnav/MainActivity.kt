@@ -1769,7 +1769,7 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(0xFF2A2A2A.toInt())
         }
         val searchInput = EditText(this).apply {
-            hint = "Search mountain or walk name…"
+            hint = "Mountain name, or 'hills near Aviemore'…"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                         android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS
             setTextColor(Color.WHITE)
@@ -1789,7 +1789,7 @@ class MainActivity : AppCompatActivity() {
                     android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                             RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Say a mountain or walk name…")
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Say a mountain name, or 'hills near a town'…")
                     },
                     SPEECH_REQUEST_CODE
                 )
@@ -1806,7 +1806,7 @@ class MainActivity : AppCompatActivity() {
         ))
 
         val statusText = TextView(this).apply {
-            text = "Type a mountain name to search…"
+            text = "Type a mountain name, or 'hills near [place]'…"
             textSize = 12f
             setTextColor(0xFF888888.toInt())
             setPadding(0, (dp * 8).toInt(), 0, (dp * 4).toInt())
@@ -1831,6 +1831,17 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT, (dp * 280).toInt()
         ))
 
+        // Radius selector — shown only when an area search ("hills near X") is active
+        val radiusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+            setPadding(0, (dp * 8).toInt(), 0, (dp * 4).toInt())
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        container.addView(radiusRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+
         val results = mutableListOf<HillSearchService.HillResult>()
         val labels  = mutableListOf<String>()
         val adapter = object : android.widget.ArrayAdapter<String>(
@@ -1847,7 +1858,7 @@ class MainActivity : AppCompatActivity() {
         listView.adapter = adapter
 
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Find a mountain or walk")
+            .setTitle("Find a mountain or area")
             .setView(container)
             .setNegativeButton("Cancel", null)
             .create()
@@ -1905,6 +1916,113 @@ class MainActivity : AppCompatActivity() {
             suggestContainer.visibility = View.VISIBLE
         }
 
+        // Area search state — set when query matches "hills near X" pattern
+        var currentAreaName: String? = null
+        var currentRadiusMiles = 5.0
+
+        // Pattern: "hills near aviemore", "munros in fort william", "peaks around glen coe", etc.
+        val areaPattern = Regex(
+            """^(?:hills?|munros?|corbetts?|grahams?|peaks?|walks?|mountains?)\s+(?:near|in|around|close to|by)\s+(.+)$""",
+            RegexOption.IGNORE_CASE
+        )
+
+        fun updateRadiusChips(selectedMiles: Double) {
+            radiusRow.removeAllViews()
+            radiusRow.addView(TextView(this).apply {
+                text = "Radius:  "; textSize = 12f
+                setTextColor(0xFF888888.toInt())
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            })
+            listOf(5.0, 10.0, 15.0, 20.0).forEach { miles ->
+                val active = Math.abs(miles - selectedMiles) < 0.5
+                radiusRow.addView(TextView(this).apply {
+                    text = "${miles.toInt()} mi"
+                    textSize = 11f
+                    setTextColor(if (active) 0xFF1A1A2E.toInt() else 0xFF4FC3F7.toInt())
+                    setBackgroundColor(if (active) 0xFF4FC3F7.toInt() else 0xFF1A2A3A.toInt())
+                    setPadding((dp * 8).toInt(), (dp * 4).toInt(), (dp * 8).toInt(), (dp * 4).toInt())
+                    setOnClickListener {
+                        if (!active) {
+                            currentRadiusMiles = miles
+                            updateRadiusChips(miles)
+                            val area = currentAreaName ?: return@setOnClickListener
+                            statusText.text = "Searching hills within ${miles.toInt()} miles of $area…"
+                            Thread {
+                                val found = try {
+                                    HillSearchService.searchHillsNearArea(area, miles * 1.60934)
+                                } catch (_: Exception) { null }
+                                runOnUiThread { applyAreaResults(found, area, miles) }
+                            }.start()
+                        }
+                    }
+                }, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = (dp * 4).toInt() })
+            }
+            // Custom distance entry
+            radiusRow.addView(TextView(this).apply {
+                text = "Custom…"
+                textSize = 11f
+                setTextColor(0xFF4FC3F7.toInt())
+                setBackgroundColor(0xFF1A2A3A.toInt())
+                setPadding((dp * 8).toInt(), (dp * 4).toInt(), (dp * 8).toInt(), (dp * 4).toInt())
+                setOnClickListener {
+                    val distInput = EditText(this@MainActivity).apply {
+                        hint = "Miles"
+                        inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                                    android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                        setTextColor(Color.WHITE)
+                        setPadding((dp * 8).toInt(), (dp * 8).toInt(), (dp * 8).toInt(), (dp * 8).toInt())
+                    }
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Search radius")
+                        .setMessage("Enter distance in miles:")
+                        .setView(distInput)
+                        .setPositiveButton("Search") { _, _ ->
+                            val miles = distInput.text.toString().toDoubleOrNull() ?: return@setPositiveButton
+                            if (miles > 0) {
+                                currentRadiusMiles = miles
+                                updateRadiusChips(miles)
+                                val area = currentAreaName ?: return@setPositiveButton
+                                statusText.text = "Searching hills within %.0f miles of $area…".format(miles)
+                                Thread {
+                                    val found = try {
+                                        HillSearchService.searchHillsNearArea(area, miles * 1.60934)
+                                    } catch (_: Exception) { null }
+                                    runOnUiThread { applyAreaResults(found, area, miles) }
+                                }.start()
+                            }
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            })
+        }
+
+        fun applyAreaResults(found: HillSearchService.NearbyHillsResult?, areaName: String, miles: Double) {
+            if (found == null) {
+                statusText.text = "Could not find \"$areaName\" — check spelling"
+                radiusRow.visibility = View.GONE
+                return
+            }
+            results.clear(); results.addAll(found.hills)
+            labels.clear(); labels.addAll(found.hills.map { h ->
+                val distKm = haversine(h.lat, h.lon, found.areaLat, found.areaLon) / 1000.0
+                val distStr = "%.1f km".format(distKm)
+                val eleStr = h.elevationM?.let { "  ${it}m" } ?: ""
+                "${h.name}$eleStr   ($distStr)"
+            })
+            adapter.notifyDataSetChanged()
+            val milesLabel = "%.0f miles".format(miles)
+            val count = found.hills.size
+            statusText.text = "$count hill${if (count != 1) "s" else ""} within $milesLabel of ${found.areaDisplayName}" +
+                if (count == 0) " — try a wider radius" else ""
+            suggestContainer.visibility = View.GONE
+            radiusRow.visibility = View.VISIBLE
+            updateRadiusChips(miles)
+        }
+
         val searchHandler = Handler(Looper.getMainLooper())
         var pending: Runnable? = null
 
@@ -1916,33 +2034,57 @@ class MainActivity : AppCompatActivity() {
                 pending?.let { searchHandler.removeCallbacks(it) }
                 suggestContainer.visibility = View.GONE
                 if (query.length < 2) {
-                    statusText.text = "Type a mountain name to search…"
+                    statusText.text = "Type a mountain name, or 'hills near [place]'…"
                     results.clear(); labels.clear()
                     adapter.notifyDataSetChanged()
+                    radiusRow.visibility = View.GONE
+                    currentAreaName = null
                     return
                 }
-                statusText.text = "Searching…"
-                val r = Runnable {
-                    Thread {
-                        val found = try { HillSearchService.search(query) }
-                                    catch (e: Exception) { emptyList() }
-                        runOnUiThread {
-                            results.clear(); results.addAll(found)
-                            labels.clear(); labels.addAll(found.map { it.displayLabel })
-                            adapter.notifyDataSetChanged()
-                            if (found.isEmpty()) {
-                                statusText.text = "No mountains found for \"$query\""
-                                showSuggestions(query)
-                            } else {
-                                statusText.text =
-                                    "${found.size} mountain${if (found.size != 1) "s" else ""} found"
-                                suggestContainer.visibility = View.GONE
+
+                val areaMatch = areaPattern.find(query)
+                if (areaMatch != null) {
+                    // ── Area search path ─────────────────────────────────────────
+                    val area = areaMatch.groupValues[1].trim()
+                    currentAreaName = area
+                    statusText.text = "Searching hills near $area…"
+                    val r = Runnable {
+                        Thread {
+                            val found = try {
+                                HillSearchService.searchHillsNearArea(area, currentRadiusMiles * 1.60934)
+                            } catch (_: Exception) { null }
+                            runOnUiThread { applyAreaResults(found, area, currentRadiusMiles) }
+                        }.start()
+                    }
+                    pending = r
+                    searchHandler.postDelayed(r, 600L)
+                } else {
+                    // ── Named hill search path ────────────────────────────────────
+                    currentAreaName = null
+                    radiusRow.visibility = View.GONE
+                    statusText.text = "Searching…"
+                    val r = Runnable {
+                        Thread {
+                            val found = try { HillSearchService.search(query) }
+                                        catch (_: Exception) { emptyList() }
+                            runOnUiThread {
+                                results.clear(); results.addAll(found)
+                                labels.clear(); labels.addAll(found.map { it.displayLabel })
+                                adapter.notifyDataSetChanged()
+                                if (found.isEmpty()) {
+                                    statusText.text = "No mountains found for \"$query\""
+                                    showSuggestions(query)
+                                } else {
+                                    statusText.text =
+                                        "${found.size} mountain${if (found.size != 1) "s" else ""} found"
+                                    suggestContainer.visibility = View.GONE
+                                }
                             }
-                        }
-                    }.start()
+                        }.start()
+                    }
+                    pending = r
+                    searchHandler.postDelayed(r, 500L)
                 }
-                pending = r
-                searchHandler.postDelayed(r, 500L)
             }
         })
 

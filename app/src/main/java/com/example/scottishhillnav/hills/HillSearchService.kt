@@ -139,6 +139,95 @@ object HillSearchService {
         }
     }
 
+    data class NearbyHillsResult(
+        val areaDisplayName: String,
+        val areaLat: Double,
+        val areaLon: Double,
+        val radiusKm: Double,
+        val hills: List<HillResult>  // sorted nearest-first from area centre
+    )
+
+    /**
+     * Geocodes [areaName] via Nominatim, then queries Overpass for hills/peaks within
+     * [radiusKm] kilometres. Returns null if the area name cannot be geocoded.
+     * Hills are sorted by distance from the area centre and same-name duplicates are
+     * disambiguated by elevation.
+     */
+    fun searchHillsNearArea(areaName: String, radiusKm: Double = 8.05): NearbyHillsResult? {
+        // 1. Geocode the place name
+        val geocodeConn = URL(
+            "https://nominatim.openstreetmap.org/search" +
+            "?q=${URLEncoder.encode(areaName, "UTF-8")}&countrycodes=gb&format=json&limit=1"
+        ).openConnection() as HttpURLConnection
+        geocodeConn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
+        geocodeConn.connectTimeout = 8_000; geocodeConn.readTimeout = 8_000
+        val geocodeArr = try {
+            JSONArray(geocodeConn.inputStream.bufferedReader().readText())
+        } catch (_: Exception) { return null }
+        finally { geocodeConn.disconnect() }
+
+        if (geocodeArr.length() == 0) return null
+        val geo = geocodeArr.getJSONObject(0)
+        val areaLat = geo.getString("lat").toDoubleOrNull() ?: return null
+        val areaLon = geo.getString("lon").toDoubleOrNull() ?: return null
+        val areaDisplayName = geo.optString("display_name")
+            .split(",").firstOrNull()?.trim()
+            ?: areaName.replaceFirstChar { it.uppercaseChar() }
+
+        // 2. Overpass: all named peaks, hills, and ridges within the radius
+        val radiusM = (radiusKm * 1000).toInt()
+        val opQuery =
+            "[out:json][timeout:25];" +
+            "(node[\"natural\"=\"peak\"](around:$radiusM,$areaLat,$areaLon);" +
+            "node[\"natural\"=\"hill\"](around:$radiusM,$areaLat,$areaLon);" +
+            "node[\"natural\"=\"ridge\"](around:$radiusM,$areaLat,$areaLon););" +
+            "out tags;"
+        val opBody = "data=${URLEncoder.encode(opQuery, "UTF-8")}"
+        val opConn = URL("https://overpass-api.de/api/interpreter").openConnection()
+            as HttpURLConnection
+        opConn.requestMethod = "POST"; opConn.doOutput = true
+        opConn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+        opConn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
+        opConn.connectTimeout = 12_000; opConn.readTimeout = 30_000
+        opConn.outputStream.write(opBody.toByteArray(Charsets.UTF_8))
+        val elements = try {
+            JSONObject(opConn.inputStream.bufferedReader().readText()).optJSONArray("elements")
+        } catch (_: Exception) { null }
+        finally { opConn.disconnect() }
+
+        val hills = mutableListOf<HillResult>()
+        if (elements != null) {
+            for (i in 0 until elements.length()) {
+                val el   = elements.getJSONObject(i)
+                val lat  = el.optDouble("lat").takeIf { !it.isNaN() && it != 0.0 } ?: continue
+                val lon  = el.optDouble("lon").takeIf { !it.isNaN() && it != 0.0 } ?: continue
+                val tags = el.optJSONObject("tags") ?: continue
+                val name = tags.optString("name").ifEmpty {
+                    tags.optString("name:en").ifEmpty { continue }
+                }
+                val ele = tags.optString("ele").toDoubleOrNull()?.toInt()
+                if (hills.none { it.name == name &&
+                        Math.abs(it.lat - lat) < 0.001 && Math.abs(it.lon - lon) < 0.001 }) {
+                    hills.add(HillResult(name = name, area = areaDisplayName,
+                                         lat = lat, lon = lon, elevationM = ele))
+                }
+            }
+        }
+
+        // Sort by distance from area centre, then disambiguate same-name hills by elevation
+        val sorted = hills.sortedBy { haversine(it.lat, it.lon, areaLat, areaLon) }
+        val nameGroups = sorted.groupBy { it.name }
+        val final = sorted.map { r ->
+            val group = nameGroups[r.name]!!
+            if (group.size <= 1) r
+            else {
+                val disambig = r.elevationM?.let { "${it}m" } ?: "%.2f°N".format(r.lat)
+                r.copy(area = r.area.ifEmpty { areaDisplayName } + " · $disambig")
+            }
+        }
+        return NearbyHillsResult(areaDisplayName, areaLat, areaLon, radiusKm, final)
+    }
+
     /**
      * Returns named car parks within 25 km of the mountain and ferry access points.
      * Settlements are NOT included — they can be across water barriers (lochs, sounds)
