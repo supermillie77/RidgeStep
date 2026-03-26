@@ -493,7 +493,7 @@ object HillSearchService {
         val enrichedParks = carParks.map { cp ->
             if (cp.area.isNotEmpty()) return@map cp   // already labelled
             val near = settlements.minByOrNull { haversine(cp.lat, cp.lon, it.lat, it.lon) }
-            if (near != null && haversine(cp.lat, cp.lon, near.lat, near.lon) < 5_000.0)
+            if (near != null && haversine(cp.lat, cp.lon, near.lat, near.lon) < 15_000.0)
                 cp.copy(area = near.name)
             else cp
         }
@@ -556,12 +556,9 @@ object HillSearchService {
         // the ferry query returned no settlements (typical for road-accessible hills).
         val sortedForLabel = accessibleParks.sortedBy { haversine(lat, lon, it.lat, it.lon) }
         val labelledParks  = sortedForLabel.take(10).map { cp ->
-            when {
-                cp.area.isNotEmpty()  -> cp          // already has label
-                cp.name != "Car park" -> cp          // named parks don't need area label
-                else -> reverseGeocodeLocality(cp.lat, cp.lon)
-                            ?.let { cp.copy(area = it) } ?: cp
-            }
+            if (cp.area.isNotEmpty()) cp          // already has label
+            else reverseGeocodeLocality(cp.lat, cp.lon)
+                     ?.let { cp.copy(area = it) } ?: cp
         } + sortedForLabel.drop(10)
 
         // Ben Lomond: guarantee Rowardennan appears by name as the primary trailhead.
