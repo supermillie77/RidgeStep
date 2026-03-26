@@ -202,9 +202,9 @@ object HillSearchService {
                 val lat  = el.optDouble("lat").takeIf { !it.isNaN() && it != 0.0 } ?: continue
                 val lon  = el.optDouble("lon").takeIf { !it.isNaN() && it != 0.0 } ?: continue
                 val tags = el.optJSONObject("tags") ?: continue
-                val name = tags.optString("name").ifEmpty {
-                    tags.optString("name:en").ifEmpty { continue }
-                }
+                val name = tags.optString("name").takeIf { it.isNotEmpty() }
+                    ?: tags.optString("name:en").takeIf { it.isNotEmpty() }
+                    ?: continue
                 val ele = tags.optString("ele").toDoubleOrNull()?.toInt()
                 if (hills.none { it.name == name &&
                         Math.abs(it.lat - lat) < 0.001 && Math.abs(it.lon - lon) < 0.001 }) {
