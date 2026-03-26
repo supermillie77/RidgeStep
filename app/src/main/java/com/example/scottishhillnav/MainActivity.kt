@@ -2302,6 +2302,8 @@ class MainActivity : AppCompatActivity() {
     private fun fetchCarParksAndSelect(result: HillSearchService.HillResult) {
         cachedOverpassRoutingGraph = null   // new mountain → discard cached routing graph
         sheetTitle.text = "Finding car parks…"
+        routingBanner.text = "🅿️  Finding car parks…"
+        routingBanner.visibility = View.VISIBLE
         Thread {
             // Retry once on failure — first-run cold-network timeouts are common
             var parks = try { HillSearchService.findNearbyCarParks(result.lat, result.lon) }
@@ -2311,6 +2313,7 @@ class MainActivity : AppCompatActivity() {
                         catch (e: Exception) { emptyList() }
             }
             runOnUiThread {
+                routingBanner.visibility = View.GONE
                 when {
                     parks.isEmpty() -> {
                         // No Overpass data — use the hill/route coordinates as a navigation target
