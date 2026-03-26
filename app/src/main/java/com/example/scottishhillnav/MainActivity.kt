@@ -1817,7 +1817,7 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(0xFF2A2A2A.toInt())
         }
         val searchInput = EditText(this).apply {
-            hint = "Mountain name, or 'hills near Aviemore'…"
+            hint = "Mountain name, or 'Cairngorms hills'…"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                         android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS
             setTextColor(Color.WHITE)
@@ -1854,7 +1854,7 @@ class MainActivity : AppCompatActivity() {
         ))
 
         val statusText = TextView(this).apply {
-            text = "Type a mountain name, or 'hills near [place]'…"
+            text = "Type a mountain name, or 'Cairngorms hills'…"
             textSize = 12f
             setTextColor(0xFF888888.toInt())
             setPadding(0, (dp * 8).toInt(), 0, (dp * 4).toInt())
@@ -1973,9 +1973,10 @@ class MainActivity : AppCompatActivity() {
         var applyAreaResults: (HillSearchService.NearbyHillsResult?, String, Double) -> Unit =
             { _, _, _ -> }
 
-        // Pattern: "hills near aviemore", "munros in fort william", "peaks around glen coe", etc.
+        // Pattern: "hills near aviemore", "munros in fort william", "peaks around glen coe",
+        // also reversed: "cairngorms hills", "aviemore walks", "ben nevis area".
         val areaPattern = Regex(
-            """^(?:hills?|munros?|corbetts?|grahams?|peaks?|walks?|mountains?)\s+(?:near|in|around|close to|by)\s+(.+)$""",
+            """^(?:(?:hills?|munros?|corbetts?|grahams?|peaks?|walks?|mountains?)\s+(?:near|in|around|close to|by)\s+(.+)|(.+)\s+(?:hills?|munros?|corbetts?|grahams?|peaks?|walks?|mountains?|area|walks?))$""",
             RegexOption.IGNORE_CASE
         )
 
@@ -2097,7 +2098,10 @@ class MainActivity : AppCompatActivity() {
                 val areaMatch = areaPattern.find(query)
                 if (areaMatch != null) {
                     // ── Area search path ─────────────────────────────────────────
-                    val area = areaMatch.groupValues[1].trim()
+                    // Group 1: "hills near X" pattern; group 2: "X hills" pattern
+                    val area = areaMatch.groupValues[1].trim().ifEmpty {
+                        areaMatch.groupValues[2].trim()
+                    }
                     currentAreaName = area
                     statusText.text = "Searching hills near $area…"
                     val r = Runnable {
@@ -2126,6 +2130,26 @@ class MainActivity : AppCompatActivity() {
                                 if (found.isEmpty()) {
                                     statusText.text = "No mountains found for \"$query\""
                                     showSuggestions(query)
+                                    // Offer area search as a prominent suggestion
+                                    suggestContainer.addView(TextView(this@MainActivity).apply {
+                                        text = "🔍  Hills near \"$query\"…"
+                                        textSize = 13f
+                                        setTextColor(0xFF4FC3F7.toInt())
+                                        setBackgroundColor(0xFF1A2A3A.toInt())
+                                        setPadding(
+                                            (dp * 10).toInt(), (dp * 8).toInt(),
+                                            (dp * 10).toInt(), (dp * 8).toInt()
+                                        )
+                                        setOnClickListener {
+                                            val areaQuery = "hills near $query"
+                                            searchInput.setText(areaQuery)
+                                            searchInput.setSelection(areaQuery.length)
+                                        }
+                                    }, LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.MATCH_PARENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT
+                                    ).apply { topMargin = (dp * 6).toInt() })
+                                    suggestContainer.visibility = View.VISIBLE
                                 } else {
                                     statusText.text =
                                         "${found.size} mountain${if (found.size != 1) "s" else ""} found"
