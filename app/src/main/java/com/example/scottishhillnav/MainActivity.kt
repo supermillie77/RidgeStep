@@ -125,6 +125,14 @@ class MainActivity : AppCompatActivity() {
     /** Route ID from the pre-selection picker (e.g. "lomond_tourist"). Null = no preference. */
     private var preferredRouteId : String? = null
     private lateinit var driveBanner: FrameLayout  // shown while driving to car park
+    private lateinit var routingBanner: TextView   // shown on the map while route search is running
+
+    // Overpass routing graph cache — reused when switching between nearby car parks so we
+    // don't make a fresh Overpass call (and hit rate-limits) for every car park selection.
+    private var cachedOverpassRoutingGraph: Graph? = null
+    private var cachedOverpassCenterLat = 0.0
+    private var cachedOverpassCenterLon = 0.0
+    private var cachedOverpassRadiusM   = 0
 
     /** A known named route entry in the pre-selection catalogue. */
     private data class CatalogueRoute(
@@ -329,6 +337,29 @@ class MainActivity : AppCompatActivity() {
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
         ).apply { gravity = Gravity.TOP }
         root.addView(driveBanner, bannerParams)
+
+        // ── Route-search overlay ──────────────────────────────────────────────
+        // Shown in the centre of the map while A* / Overpass download is running.
+        // Positioned here (above the bottom sheet) so it's always visible even
+        // when the bottom sheet is fully collapsed.
+        val dp2 = resources.displayMetrics.density
+        routingBanner = TextView(this).apply {
+            text = "🔍  Finding route…"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(0xDD0D0D0D.toInt())
+            gravity = Gravity.CENTER
+            elevation = 12f
+            setPadding(
+                (dp2 * 20).toInt(), (dp2 * 10).toInt(),
+                (dp2 * 20).toInt(), (dp2 * 10).toInt()
+            )
+            visibility = View.GONE
+        }
+        root.addView(routingBanner, CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT
+        ).apply { gravity = Gravity.CENTER })
 
         // ── Bottom Sheet ─────────────────────────────────────────────────────
         val bottomSheet = FrameLayout(this).apply {
@@ -914,6 +945,8 @@ class MainActivity : AppCompatActivity() {
         routeCandidates.clear(); activeIndex = 0; routeOverlay.clear()
         sheetTitle.text    = "Finding route…"
         sheetSubtitle.text = ""
+        routingBanner.text = "🔍  Finding route…"
+        routingBanner.visibility = View.VISIBLE
         val points = tapPoints.toList()
         Thread {
             try {
@@ -922,6 +955,7 @@ class MainActivity : AppCompatActivity() {
                     enrichRouteElevations(found)   // file I/O — non-critical, never blocks route display
                 } catch (_: Exception) { /* elevation enrichment failed — routes still shown */ }
                 runOnUiThread {
+                    routingBanner.visibility = View.GONE
                     routeCandidates += found
                     if (routeCandidates.isEmpty()) {
                         sheetTitle.text    = "No mapped path found"
@@ -953,6 +987,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    routingBanner.visibility = View.GONE
                     sheetTitle.text = "No route found"
                     map.invalidate()
                 }
@@ -1024,15 +1059,31 @@ class MainActivity : AppCompatActivity() {
 
         if (nearestDistToStart > 2_000.0) {
             // Bundled graph has no data here — download footpath network from Overpass
-            runOnUiThread { sheetTitle.text = "Downloading map data…" }
             val midLat = (start.latitude  + end.latitude)  / 2.0
             val midLon = (start.longitude + end.longitude) / 2.0
             val routeDist = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
             val radius = (routeDist / 2.0 + 5_000.0).toInt().coerceIn(10_000, 25_000)
 
-            val overpassGraph = try {
-                OverpassGraphBuilder.buildForArea(midLat, midLon, radius)
-            } catch (e: Exception) { null }
+            // Reuse the cached Overpass graph when switching between nearby car parks
+            // for the same mountain — avoids repeated Overpass calls that trigger rate-limits.
+            val cacheCoversStart = haversine(start.latitude, start.longitude,
+                cachedOverpassCenterLat, cachedOverpassCenterLon) < cachedOverpassRadiusM - 1_000
+            val cacheCoversEnd   = haversine(end.latitude, end.longitude,
+                cachedOverpassCenterLat, cachedOverpassCenterLon) < cachedOverpassRadiusM - 1_000
+
+            val overpassGraph = if (cachedOverpassRoutingGraph != null && cacheCoversStart && cacheCoversEnd) {
+                cachedOverpassRoutingGraph!!
+            } else {
+                runOnUiThread { sheetTitle.text = "Downloading map data…"; routingBanner.text = "⬇️  Downloading footpath data…" }
+                try { OverpassGraphBuilder.buildForArea(midLat, midLon, radius) }
+                catch (e: Exception) { null }
+                ?.also {
+                    cachedOverpassRoutingGraph = it
+                    cachedOverpassCenterLat = midLat
+                    cachedOverpassCenterLon = midLon
+                    cachedOverpassRadiusM   = radius
+                }
+            }
 
             val VSTART = -1
             val VEND   = -2
@@ -1193,13 +1244,27 @@ class MainActivity : AppCompatActivity() {
         // the mountain footpath (e.g. Ben Lomond: B837 road is in the pack but the
         // Rowardennan–summit path is a different connected component). Try Overpass
         // before giving up so the user always gets a real walking route.
-        runOnUiThread { sheetTitle.text = "Downloading map data…" }
         val opMidLat = (start.latitude + end.latitude) / 2.0
         val opMidLon = (start.longitude + end.longitude) / 2.0
         val opDist   = haversine(start.latitude, start.longitude, end.latitude, end.longitude)
         val opRadius = (opDist / 2.0 + 5_000.0).toInt().coerceIn(10_000, 25_000)
-        val opGraph  = try { OverpassGraphBuilder.buildForArea(opMidLat, opMidLon, opRadius) }
-                       catch (_: Exception) { null }
+        val opCacheCoversStart = haversine(start.latitude, start.longitude,
+            cachedOverpassCenterLat, cachedOverpassCenterLon) < cachedOverpassRadiusM - 1_000
+        val opCacheCoversEnd   = haversine(end.latitude, end.longitude,
+            cachedOverpassCenterLat, cachedOverpassCenterLon) < cachedOverpassRadiusM - 1_000
+        val opGraph = if (cachedOverpassRoutingGraph != null && opCacheCoversStart && opCacheCoversEnd) {
+            cachedOverpassRoutingGraph!!
+        } else {
+            runOnUiThread { sheetTitle.text = "Downloading map data…"; routingBanner.text = "⬇️  Downloading footpath data…" }
+            try { OverpassGraphBuilder.buildForArea(opMidLat, opMidLon, opRadius) }
+            catch (_: Exception) { null }
+            ?.also {
+                cachedOverpassRoutingGraph = it
+                cachedOverpassCenterLat = opMidLat
+                cachedOverpassCenterLon = opMidLon
+                cachedOverpassRadiusM   = opRadius
+            }
+        }
         if (opGraph != null) {
             val opConnected = opGraph.nodes.entries
                 .filter { opGraph.edges[it.key]?.isNotEmpty() == true }
@@ -1646,6 +1711,8 @@ class MainActivity : AppCompatActivity() {
         offTrackCount = 0; lastOffTrackAnnounce = 0L
         navPhase = NavPhase.IDLE
         selectedHill = null; selectedCarPark = null; preferredRouteId = null
+        cachedOverpassRoutingGraph = null
+        routingBanner.visibility = View.GONE
         driveBanner.visibility = View.GONE
         voiceNavigator.clearInstructions()
         routeSelectorRow.removeAllViews()
@@ -2233,6 +2300,7 @@ class MainActivity : AppCompatActivity() {
 
     /** After a route (or "any") is chosen, look up nearby car parks then proceed. */
     private fun fetchCarParksAndSelect(result: HillSearchService.HillResult) {
+        cachedOverpassRoutingGraph = null   // new mountain → discard cached routing graph
         sheetTitle.text = "Finding car parks…"
         Thread {
             // Retry once on failure — first-run cold-network timeouts are common
