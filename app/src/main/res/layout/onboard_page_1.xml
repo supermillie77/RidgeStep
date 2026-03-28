@@ -191,7 +191,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Discover Scotland's peaks"
+            android:text="Explore Britain's hills"
             android:textSize="30sp"
             android:textStyle="bold"
             android:textColor="@color/ob_headline"
@@ -201,7 +201,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="800+ hills across 9 categories — each shown in its own colour so you always know what you're looking at"
+            android:text="2,700+ summits across 9 categories — from Scottish Munros to Lake District Wainwrights, each shown in its own colour"
             android:textSize="15sp"
             android:textColor="@color/ob_subtitle"
             android:lineSpacingMultiplier="1.4"/>
