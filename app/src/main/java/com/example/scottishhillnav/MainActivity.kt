@@ -34,6 +34,7 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.app.ActivityCompat
 import com.example.scottishhillnav.DemProvider
 import com.example.scottishhillnav.hills.CarPark
+import com.example.scottishhillnav.hills.Hill
 import com.example.scottishhillnav.hills.HillRepository
 import com.example.scottishhillnav.hills.HillSearchService
 import com.example.scottishhillnav.hills.HillSuggestionService
@@ -46,7 +47,9 @@ import com.example.scottishhillnav.navigation.RouteIndex
 import com.example.scottishhillnav.navigation.VoiceNavigator
 import com.example.scottishhillnav.routing.*
 import com.example.scottishhillnav.ui.ElevationProfileView
+import com.example.scottishhillnav.ui.NearbyHillsSheet
 import com.example.scottishhillnav.ui.RouteGradientOverlay
+import com.example.scottishhillnav.ui.SummitInfoSheet
 import com.example.scottishhillnav.ui.SummitOverlay
 import com.google.android.gms.location.*
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -412,6 +415,24 @@ class MainActivity : AppCompatActivity() {
             setMargins(margin, margin, margin, peekOffset)
         }
         root.addView(locateFab, locateFabParams)
+
+        // ── Near me FAB (bottom-left, above locate FAB) ──────────────────────
+        val nearFab = FloatingActionButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_agenda)
+            contentDescription = "Hills near me"
+            setOnClickListener { showNearbyHills() }
+        }
+        val nearFabParams = CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            val margin     = (resources.displayMetrics.density * 16).toInt()
+            val peekOffset = (resources.displayMetrics.density * 156).toInt()
+            val fabSize    = (resources.displayMetrics.density * 56).toInt()
+            setMargins(margin, margin, margin, peekOffset + fabSize + margin)
+        }
+        root.addView(nearFab, nearFabParams)
 
         // Show locate button when user manually pans — but not during the initial GPS animation
         map.addMapListener(object : MapListener {
@@ -1043,6 +1064,26 @@ class MainActivity : AppCompatActivity() {
     // ── Route building ────────────────────────────────────────────────────────
 
     private fun handleTap(p: GeoPoint) {
+        // Check if the tap landed on a summit triangle — show info card instead of placing a pin
+        // Only intercept when no route is in progress (no pins placed yet)
+        if (tapPoints.isEmpty() && navPhase == NavPhase.IDLE) {
+            val threshold = summitTapThresholdMeters()
+            val nearest = HillRepository.hills.minByOrNull {
+                haversine(p.latitude, p.longitude, it.summitLat, it.summitLon)
+            }
+            if (nearest != null) {
+                val dist = haversine(p.latitude, p.longitude, nearest.summitLat, nearest.summitLon)
+                if (dist < threshold) {
+                    val loc = lastLocation
+                    val userDist = if (loc != null)
+                        haversine(loc.latitude, loc.longitude, nearest.summitLat, nearest.summitLon)
+                    else -1.0
+                    showSummitInfoSheet(nearest, userDist)
+                    return
+                }
+            }
+        }
+
         when {
             navPhase == NavPhase.HILL_NAV && tapPoints.size == 1 -> {
                 // Hill was pre-selected (destination already set); first map tap = Start
@@ -2929,6 +2970,100 @@ class MainActivity : AppCompatActivity() {
         val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         val cap = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
         return cap.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    // ── Nearby hills discovery ────────────────────────────────────────────────
+
+    /**
+     * Shows a bottom sheet listing the 15 closest hills to the user's current
+     * GPS location. If location is unknown, falls back to the map centre.
+     */
+    private fun showNearbyHills() {
+        val refLat: Double
+        val refLon: Double
+        val loc = lastLocation
+        if (loc != null) {
+            refLat = loc.latitude
+            refLon = loc.longitude
+        } else {
+            val centre = map.mapCenter
+            refLat = centre.latitude
+            refLon = centre.longitude
+        }
+
+        val sorted = HillRepository.hills
+            .map { hill ->
+                NearbyHillsSheet.Entry(
+                    hill = hill,
+                    distanceM = haversine(refLat, refLon, hill.summitLat, hill.summitLon)
+                )
+            }
+            .sortedBy { it.distanceM }
+            .take(15)
+
+        val sheet = NearbyHillsSheet().apply {
+            entries = sorted
+            onHillPicked = { hill -> routeToHillFromRepo(hill) }
+        }
+        sheet.show(supportFragmentManager, "nearby_hills")
+    }
+
+    /**
+     * Routes to [hill] using the user's current GPS position as the start.
+     * If GPS is unavailable the user is prompted to tap their start on the map.
+     */
+    private fun routeToHillFromRepo(hill: Hill) {
+        clearRoutes()
+        val result = HillSearchService.HillResult(
+            name       = hill.name,
+            area       = hill.area,
+            lat        = hill.summitLat,
+            lon        = hill.summitLon,
+            elevationM = hill.elevationM
+        )
+        val loc = lastLocation
+        if (loc != null) {
+            // Use GPS position as start, summit as destination
+            selectedHill    = result
+            selectedCarPark = null
+            navPhase        = NavPhase.HILL_NAV
+            val startPt   = GeoPoint(loc.latitude, loc.longitude)
+            val summitPt  = GeoPoint(hill.summitLat, hill.summitLon)
+            tapPoints.addAll(listOf(startPt, summitPt))
+            tapMarkers.add(addMarker(startPt,  "Start",    0xFF2E7D32.toInt()))
+            tapMarkers.add(addMarker(summitPt, hill.name, 0xFFC62828.toInt()))
+            map.controller.setZoom(13.0)
+            map.controller.setCenter(summitPt)
+            buildRoutes()
+        } else {
+            // No GPS — fall back to the search-selected flow (user taps start)
+            onHillSelected(result, null)
+        }
+    }
+
+    /**
+     * Shows a summit info card for [hill]. Called when the user taps a summit triangle.
+     * [distanceM] is the distance from the user's location (negative = unknown).
+     */
+    private fun showSummitInfoSheet(hill: Hill, distanceM: Double) {
+        val sheet = SummitInfoSheet().apply {
+            this.hill       = hill
+            this.distanceM  = distanceM
+            onRouteFromHere = { h -> routeToHillFromRepo(h) }
+        }
+        sheet.show(supportFragmentManager, "summit_info")
+    }
+
+    /**
+     * Returns the geographic distance threshold (metres) within which a tap on
+     * the map is considered to be targeting a summit triangle, based on zoom level.
+     */
+    private fun summitTapThresholdMeters(): Double = when {
+        map.zoomLevelDouble >= 14.0 -> 200.0
+        map.zoomLevelDouble >= 12.0 -> 400.0
+        map.zoomLevelDouble >= 10.0 -> 900.0
+        map.zoomLevelDouble >= 8.0  -> 2_500.0
+        else                        -> 6_000.0
     }
 
     // ── Weather ───────────────────────────────────────────────────────────────

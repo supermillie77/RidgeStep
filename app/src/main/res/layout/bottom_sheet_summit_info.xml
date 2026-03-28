@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#0D1B2A">
+
+    <!-- Drag handle -->
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="10dp"
+        android:background="#1E3347"/>
+
+    <!-- Category colour strip -->
+    <View
+        android:id="@+id/summitCategoryStrip"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginTop="10dp"/>
+
+    <!-- Hill name -->
+    <TextView
+        android:id="@+id/summitName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#E8EDF2"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="16dp"/>
+
+    <!-- Category + area -->
+    <TextView
+        android:id="@+id/summitCategoryArea"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="13sp"
+        android:textColor="#7B95A9"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="2dp"/>
+
+    <!-- Stats row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="4dp">
+
+        <!-- Elevation -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:background="#162032"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp">
+            <TextView
+                android:id="@+id/summitElevation"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="#E8EDF2"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="elevation"
+                android:textSize="10sp"
+                android:textColor="#7B95A9"/>
+        </LinearLayout>
+
+        <View android:layout_width="2dp" android:layout_height="match_parent"
+            android:background="#0D1B2A"/>
+
+        <!-- Distance -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:background="#162032"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp">
+            <TextView
+                android:id="@+id/summitDistance"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="#E8EDF2"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="from you"
+                android:textSize="10sp"
+                android:textColor="#7B95A9"/>
+        </LinearLayout>
+
+        <View android:layout_width="2dp" android:layout_height="match_parent"
+            android:background="#0D1B2A"/>
+
+        <!-- Est. time -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:background="#162032"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp">
+            <TextView
+                android:id="@+id/summitEta"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="#FF6B35"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="est. time"
+                android:textSize="10sp"
+                android:textColor="#7B95A9"/>
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Route button -->
+    <TextView
+        android:id="@+id/summitRouteBtn"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_marginStart="20dp"
+        android:layout_marginEnd="20dp"
+        android:layout_marginTop="16dp"
+        android:text="Route from here"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF"
+        android:gravity="center"
+        android:background="#FF6B35"/>
+
+    <!-- Dismiss -->
+    <TextView
+        android:id="@+id/summitDismissBtn"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:text="Dismiss"
+        android:textSize="14sp"
+        android:textColor="#7B95A9"
+        android:gravity="center"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="12dp"/>
+
+</LinearLayout>
