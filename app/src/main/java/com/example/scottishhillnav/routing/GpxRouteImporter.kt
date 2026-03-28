@@ -77,26 +77,41 @@ class GpxRouteImporter(
             return 2 * r * asin(sqrt(a))
         }
 
+        // ── Spatial grid for O(1) nearest-node lookup ─────────────────────────
+        // Each cell is ~1.1 km × ~0.7 km at UK latitudes; a 3×3 neighbourhood
+        // covers >3 km — far beyond the snap (20 m) and attach (120 m) radii.
+        // This reduces nearestWithin from O(140 000) to O(~200) per GPX point.
+        val CELL = 0.01   // degrees (~1.1 km)
+        fun cellRow(lat: Double) = (lat / CELL).toInt()
+        fun cellCol(lon: Double) = (lon / CELL).toInt()
+
+        // Use a flat Long key to avoid Pair boxing overhead
+        fun cellKey(row: Int, col: Int): Long = row * 1_000_000L + col
+
+        val grid = HashMap<Long, MutableList<Int>>(nodes.size * 2)
+        for ((id, n) in nodes) {
+            grid.getOrPut(cellKey(cellRow(n.lat), cellCol(n.lon))) { mutableListOf() }.add(id)
+        }
+
         fun nearestWithin(
             p: TrackPoint,
             withinMeters: Double,
             restrictToBaseOnly: Boolean
         ): Int? {
-
             var bestId: Int? = null
             var bestD = Double.MAX_VALUE
 
-            for ((id, n) in nodes) {
-
-                if (restrictToBaseOnly && !baseNodeIds.contains(id)) continue
-
-                val d = haversineMeters(p.lat, p.lon, n.lat, n.lon)
-                if (d < bestD) {
-                    bestD = d
-                    bestId = id
+            val pRow = cellRow(p.lat)
+            val pCol = cellCol(p.lon)
+            for (dr in -1..1) for (dc in -1..1) {
+                val bucket = grid[cellKey(pRow + dr, pCol + dc)] ?: continue
+                for (id in bucket) {
+                    if (restrictToBaseOnly && id !in baseNodeIds) continue
+                    val n = nodes[id] ?: continue
+                    val d = haversineMeters(p.lat, p.lon, n.lat, n.lon)
+                    if (d < bestD) { bestD = d; bestId = id }
                 }
             }
-
             return if (bestD <= withinMeters) bestId else null
         }
 
@@ -105,7 +120,10 @@ class GpxRouteImporter(
             if (snapped != null) return snapped
 
             val id = nextId++
-            nodes[id] = Node(p.lat, p.lon, p.ele)
+            val newNode = Node(p.lat, p.lon, p.ele)
+            nodes[id] = newNode
+            // Keep grid consistent as new nodes are added
+            grid.getOrPut(cellKey(cellRow(newNode.lat), cellCol(newNode.lon))) { mutableListOf() }.add(id)
             return id
         }
 

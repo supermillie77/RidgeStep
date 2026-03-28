@@ -698,23 +698,21 @@ class MainActivity : AppCompatActivity() {
         // Reading 9.2 MB of binary data + parsing 4 GPX routes previously blocked the
         // main thread for 2-4 seconds. Now the UI appears immediately and the loading
         // banner hides once the graph is ready (~1-3 s on a modern device).
-        routingBanner.text = "⏳  Loading navigation data…"
+        routingBanner.text = "⏳  Loading map data…"
         routingBanner.visibility = View.VISIBLE
         Thread {
+            // Phase 1: binary graph (nodes + edges) — typically <200 ms
             HillRepository.initialize(this)
-            val g = GraphStore.load(this)
+            val base = GraphStore.loadBase(this)
             runOnUiThread {
-                graph              = g
-                bundledGraph       = g
-                bundledRouter      = AStarRouter(g)
-                router             = AStarRouter(g)
-                metricsCalculator  = RouteMetricsCalculator(g)
-                candidateGenerator = RouteCandidateGenerator(g, router, metricsCalculator)
-                instructionGenerator = InstructionGenerator(g)
-                graphReady         = true
+                initRouters(base)
+                graphReady = true
                 routingBanner.visibility = View.GONE
-                map.invalidate()   // redraw summit triangles now all hills are loaded
+                map.invalidate()
             }
+            // Phase 2: GPX route enrichment — now O(ms) with spatial grid, silent to the user
+            val enriched = GraphStore.enrichWithGpx(this, base)
+            runOnUiThread { initRouters(enriched) }
         }.start()
 
         map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
@@ -2140,6 +2138,17 @@ class MainActivity : AppCompatActivity() {
             n < 292.5               -> "West"
             else                    -> "North West"
         }
+    }
+
+    /** Installs [g] as the active routing graph. Safe to call from the UI thread. */
+    private fun initRouters(g: Graph) {
+        graph              = g
+        bundledGraph       = g
+        bundledRouter      = AStarRouter(g)
+        router             = AStarRouter(g)
+        metricsCalculator  = RouteMetricsCalculator(g)
+        candidateGenerator = RouteCandidateGenerator(g, router, metricsCalculator)
+        instructionGenerator = InstructionGenerator(g)
     }
 
     private fun haversine(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
