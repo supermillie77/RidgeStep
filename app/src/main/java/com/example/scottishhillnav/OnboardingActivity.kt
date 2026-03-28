@@ -1,6 +1,8 @@
 package com.example.scottishhillnav
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -8,10 +10,14 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 
 class OnboardingActivity : AppCompatActivity() {
+
+    private val LOCATION_PERM_REQUEST = 1001
 
     private val pageLayouts = intArrayOf(
         R.layout.onboard_page_1,
@@ -19,17 +25,22 @@ class OnboardingActivity : AppCompatActivity() {
         R.layout.onboard_page_2,
         R.layout.onboard_page_3,
         R.layout.onboard_page_4,
-        R.layout.onboard_page_map_tour
+        R.layout.onboard_page_map_tour,
+        R.layout.onboard_page_location    // must be last — "Get started" triggers permission
     )
+
+    private lateinit var pager:   ViewPager2
+    private lateinit var btnNext: TextView
+    private lateinit var btnSkip: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_onboarding)
 
-        val pager    = findViewById<ViewPager2>(R.id.onboardViewPager)
-        val dots     = findViewById<LinearLayout>(R.id.dotsContainer)
-        val btnNext  = findViewById<TextView>(R.id.btnNext)
-        val btnSkip  = findViewById<TextView>(R.id.btnSkip)
+        pager   = findViewById(R.id.onboardViewPager)
+        val dots = findViewById<LinearLayout>(R.id.dotsContainer)
+        btnNext  = findViewById(R.id.btnNext)
+        btnSkip  = findViewById(R.id.btnSkip)
 
         pager.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun getItemCount() = pageLayouts.size
@@ -44,12 +55,22 @@ class OnboardingActivity : AppCompatActivity() {
 
         fun syncUi(pos: Int) {
             buildDots(dots, pos)
-            if (pos == pageLayouts.lastIndex) {
-                btnNext.text = "Get started"
-                btnSkip.visibility = View.GONE
-            } else {
-                btnNext.text = "Next  →"
-                btnSkip.visibility = View.VISIBLE
+            when {
+                pos == pageLayouts.lastIndex -> {
+                    btnNext.text = "Allow location"
+                    btnSkip.text = "Maybe later"
+                    btnSkip.visibility = View.VISIBLE
+                }
+                pos == pageLayouts.lastIndex - 1 -> {
+                    btnNext.text = "Next  →"
+                    btnSkip.text = "Skip"
+                    btnSkip.visibility = View.VISIBLE
+                }
+                else -> {
+                    btnNext.text = "Next  →"
+                    btnSkip.text = "Skip"
+                    btnSkip.visibility = View.VISIBLE
+                }
             }
         }
 
@@ -60,19 +81,51 @@ class OnboardingActivity : AppCompatActivity() {
         })
 
         btnNext.setOnClickListener {
-            if (pager.currentItem == pageLayouts.lastIndex) done()
-            else pager.currentItem += 1
+            if (pager.currentItem == pageLayouts.lastIndex) {
+                requestLocationPermission()
+            } else {
+                pager.currentItem += 1
+            }
         }
         btnSkip.setOnClickListener { done() }
+    }
+
+    private fun requestLocationPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+            // Already granted (e.g. user reinstalled) — go straight to the app
+            done()
+            return
+        }
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ),
+            LOCATION_PERM_REQUEST
+        )
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERM_REQUEST) {
+            // Proceed regardless of result — MainActivity handles the denied case gracefully
+            done()
+        }
     }
 
     private fun buildDots(container: LinearLayout, active: Int) {
         container.removeAllViews()
         val dp = resources.displayMetrics.density
-        val dotH   = (8  * dp).toInt()
-        val dotW   = (8  * dp).toInt()
+        val dotH    = ( 8 * dp).toInt()
+        val dotW    = ( 8 * dp).toInt()
         val activeW = (24 * dp).toInt()
-        val margin = (5  * dp).toInt()
+        val margin  = ( 5 * dp).toInt()
         repeat(pageLayouts.size) { i ->
             val v = View(this)
             v.layoutParams = LinearLayout.LayoutParams(
