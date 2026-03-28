@@ -34,6 +34,7 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.app.ActivityCompat
 import com.example.scottishhillnav.DemProvider
 import com.example.scottishhillnav.hills.CarPark
+import com.example.scottishhillnav.hills.HillRepository
 import com.example.scottishhillnav.hills.HillSearchService
 import com.example.scottishhillnav.hills.HillSuggestionService
 import com.example.scottishhillnav.hills.WeatherService
@@ -587,6 +588,7 @@ class MainActivity : AppCompatActivity() {
         routingBanner.text = "⏳  Loading navigation data…"
         routingBanner.visibility = View.VISIBLE
         Thread {
+            HillRepository.initialize(this)
             val g = GraphStore.load(this)
             runOnUiThread {
                 graph              = g
@@ -598,6 +600,7 @@ class MainActivity : AppCompatActivity() {
                 instructionGenerator = InstructionGenerator(g)
                 graphReady         = true
                 routingBanner.visibility = View.GONE
+                map.invalidate()   // redraw summit triangles now all hills are loaded
             }
         }.start()
 

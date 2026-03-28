@@ -16,5 +16,7 @@ data class Hill(
     val area: String,
     val summitLat: Double,
     val summitLon: Double,
-    val carParks: List<CarPark>
+    val carParks: List<CarPark> = emptyList(),
+    val category: String = "Hill",
+    val elevationM: Int = 0
 )

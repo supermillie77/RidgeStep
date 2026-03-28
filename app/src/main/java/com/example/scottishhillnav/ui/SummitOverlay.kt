@@ -38,7 +38,7 @@ class SummitOverlay(density: Float) : Overlay() {
         setShadowLayer(3f * density, 0f, 0f, 0xFF222222.toInt())
     }
 
-    private val hills = HillRepository.hills
+    private val hills get() = HillRepository.hills
     private val path = Path()
     private val pt = android.graphics.Point()
 
