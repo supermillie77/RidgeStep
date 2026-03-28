@@ -83,7 +83,8 @@ class AStarRouter(private val graph: Graph) : ConstrainedRouter {
                 return reconstruct(current)
             }
 
-            // Skip stale entries (node was re-opened with a better g later)
+            // Skip stale entries: a better path to this node was found after this entry
+            // was queued. Equal cost means this IS the best entry — must not skip it.
             if (current.g > (bestG[current.nodeId] ?: Double.MAX_VALUE)) continue
 
             val outEdges = graph.edges[current.nodeId] ?: continue

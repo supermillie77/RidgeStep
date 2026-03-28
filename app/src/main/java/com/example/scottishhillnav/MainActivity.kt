@@ -36,6 +36,7 @@ import com.example.scottishhillnav.DemProvider
 import com.example.scottishhillnav.hills.CarPark
 import com.example.scottishhillnav.hills.HillSearchService
 import com.example.scottishhillnav.hills.HillSuggestionService
+import com.example.scottishhillnav.hills.WeatherService
 import com.example.scottishhillnav.navigation.ElevationProfileModel
 import com.example.scottishhillnav.navigation.GaelicPronouncer
 import com.example.scottishhillnav.navigation.InstructionGenerator
@@ -130,6 +131,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var routingBanner: TextView   // shown on the map while route search is running
     private lateinit var addSummitRow: LinearLayout // "＋ Add another hill" chip row in bottom sheet
     private var addingSummit = false               // true when hill search is in "add waypoint" mode
+    private var hasAnimatedToUser = false          // pans map to GPS location on first fix
+    private var hasCheckedWeather = false          // weather check fires once after first GPS fix
+    private lateinit var weatherBanner: LinearLayout
+    private lateinit var weatherBannerText: TextView
+    private lateinit var weatherFindBtn: TextView
 
     // Overpass routing graph cache — reused when switching between nearby car parks so we
     // don't make a fresh Overpass call (and hit rate-limits) for every car park selection.
@@ -183,6 +189,16 @@ class MainActivity : AppCompatActivity() {
         override fun onLocationResult(result: LocationResult) {
             val loc = result.lastLocation ?: return
             lastLocation = loc
+            // On the very first GPS fix: pan the map to the user's location and check weather
+            if (!hasAnimatedToUser) {
+                hasAnimatedToUser = true
+                map.controller.setCenter(GeoPoint(loc.latitude, loc.longitude))
+                map.controller.setZoom(10.0)
+                if (!hasCheckedWeather) {
+                    hasCheckedWeather = true
+                    checkWeatherForLocation(loc.latitude, loc.longitude)
+                }
+            }
             if (navPhase == NavPhase.DRIVING_TO_CARPARK) {
                 checkCarParkArrival(loc)
             } else {
@@ -230,8 +246,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             setTileSource(outdoorsSource)
-            controller.setZoom(14.0)
-            controller.setCenter(GeoPoint(56.7969, -5.0036))
+            controller.setZoom(6.0)
+            controller.setCenter(GeoPoint(57.0, -4.5))  // Scotland overview — GPS will refine on first fix
         }
         root.addView(map, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.MATCH_PARENT,
@@ -294,7 +310,10 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(hillFab, hillFabParams)
 
-        // ── Driving banner (hidden until driving phase) ───────────────────────
+        // ── Top banners container: drive + weather stack vertically at screen top ─
+        val topBannerContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        // Driving banner (hidden until driving phase)
         driveBanner = FrameLayout(this).apply { visibility = View.GONE }
         val bannerContent = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -329,11 +348,47 @@ class MainActivity : AppCompatActivity() {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ))
-        val bannerParams = CoordinatorLayout.LayoutParams(
+        topBannerContainer.addView(driveBanner)
+
+        // Weather warning banner (shown when conditions at user's location are poor)
+        weatherBanner = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0xFF37474F.toInt())  // blue-grey
+            val ph = (resources.displayMetrics.density * 12).toInt()
+            val pv = (resources.displayMetrics.density * 8).toInt()
+            setPadding(ph, pv, (resources.displayMetrics.density * 6).toInt(), pv)
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+        }
+        weatherBannerText = TextView(this).apply {
+            textSize = 12.5f
+            setTextColor(Color.WHITE)
+        }
+        weatherFindBtn = TextView(this).apply {
+            text = "Find clear areas"
+            textSize = 12f
+            setTextColor(0xFF80DEEA.toInt())
+            val ph = (resources.displayMetrics.density * 10).toInt()
+            setPadding(ph, 0, (resources.displayMetrics.density * 4).toInt(), 0)
+        }
+        val weatherDismissBtn = TextView(this).apply {
+            text = "✕"
+            textSize = 14f
+            setTextColor(0xFFB0BEC5.toInt())
+            val ph = (resources.displayMetrics.density * 6).toInt()
+            setPadding(ph, 0, 0, 0)
+            setOnClickListener { weatherBanner.visibility = View.GONE }
+        }
+        weatherBanner.addView(weatherBannerText, LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        weatherBanner.addView(weatherFindBtn)
+        weatherBanner.addView(weatherDismissBtn)
+        topBannerContainer.addView(weatherBanner)
+
+        root.addView(topBannerContainer, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.MATCH_PARENT,
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
-        ).apply { gravity = Gravity.TOP }
-        root.addView(driveBanner, bannerParams)
+        ).apply { gravity = Gravity.TOP })
 
         // ── Route-search overlay ──────────────────────────────────────────────
         // Shown in the centre of the map while A* / Overpass download is running.
@@ -505,6 +560,23 @@ class MainActivity : AppCompatActivity() {
         sheetSubtitle.setOnLongClickListener { clearRoutes(); true }
 
         setContentView(root)
+
+        // ── First-launch welcome ──────────────────────────────────────────────
+        val appPrefs = getSharedPreferences("app_state", MODE_PRIVATE)
+        if (!appPrefs.getBoolean("seen_welcome", false)) {
+            appPrefs.edit().putBoolean("seen_welcome", true).apply()
+            AlertDialog.Builder(this)
+                .setTitle("Welcome to RidgeStep")
+                .setMessage(
+                    "Navigate Scottish hills with confidence.\n\n" +
+                    "1. Tap \uD83D\uDD0D below to search for a Munro, Corbett, or Graham\n" +
+                    "2. Select a car park as your starting point\n" +
+                    "3. Follow the route — pull up the bottom panel for stats\n\n" +
+                    "Tap the map to manually place start and end pins."
+                )
+                .setPositiveButton("Get started", null)
+                .show()
+        }
 
         // ── Load bundled graph on background thread ───────────────────────────
         // Reading 9.2 MB of binary data + parsing 4 GPX routes previously blocked the
@@ -1058,10 +1130,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
         if (anyChanged) {
-            graph             = Graph(nodes = enriched, edges = graph.edges, landmarks = graph.landmarks)
-            router            = AStarRouter(graph)
-            metricsCalculator = RouteMetricsCalculator(graph)
-            candidateGenerator = RouteCandidateGenerator(graph, router, metricsCalculator)
+            // Construct new objects here (background thread — safe, they are immutable).
+            // Assign to fields on the UI thread to avoid a data race with overlay drawing.
+            val newGraph = Graph(nodes = enriched, edges = graph.edges, landmarks = graph.landmarks)
+            val newRouter = AStarRouter(newGraph)
+            val newMetrics = RouteMetricsCalculator(newGraph)
+            val newGen = RouteCandidateGenerator(newGraph, newRouter, newMetrics)
+            runOnUiThread {
+                graph             = newGraph
+                router            = newRouter
+                metricsCalculator = newMetrics
+                candidateGenerator = newGen
+            }
         }
     }
 
@@ -1952,7 +2032,7 @@ class MainActivity : AppCompatActivity() {
         return sb.toString()
     }
 
-    private fun showHillSearch() {
+    private fun showHillSearch(initialQuery: String = "") {
         HillSearchService.clearAreaCache()
         val dp = resources.displayMetrics.density
 
@@ -1975,6 +2055,10 @@ class MainActivity : AppCompatActivity() {
             setHintTextColor(0xFF666666.toInt())
             background = null
             setPadding((dp * 10).toInt(), (dp * 10).toInt(), (dp * 6).toInt(), (dp * 10).toInt())
+        }
+        if (initialQuery.isNotEmpty()) {
+            searchInput.setText(initialQuery)
+            searchInput.setSelection(initialQuery.length)
         }
         val micBtn = TextView(this).apply {
             text = "🎙"
@@ -2657,6 +2741,43 @@ class MainActivity : AppCompatActivity() {
                 setSelection(spoken.length)
             }
         }
+    }
+
+    // ── Weather ───────────────────────────────────────────────────────────────
+
+    /** Checks weather at [lat]/[lon] on a background thread. Shows a banner if conditions are poor. */
+    private fun checkWeatherForLocation(lat: Double, lon: Double) {
+        Thread {
+            val current = WeatherService.fetchCurrent(lat, lon)
+            if (current != null && current.isPoor) {
+                val clearAreas = WeatherService.findClearAreas()
+                runOnUiThread { showWeatherBanner(current, clearAreas) }
+            }
+        }.start()
+    }
+
+    private fun showWeatherBanner(
+        current: WeatherService.AreaWeather,
+        clearAreas: List<WeatherService.AreaWeather>
+    ) {
+        weatherBannerText.text =
+            "\u2601 ${current.description.replaceFirstChar { it.uppercaseChar() }} at your location"
+        weatherFindBtn.setOnClickListener {
+            if (clearAreas.isEmpty()) {
+                Toast.makeText(this, "No clear areas found nearby", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val names = clearAreas.map { "\u2600 ${it.areaName}  (${it.description})" }.toTypedArray()
+            AlertDialog.Builder(this)
+                .setTitle("Clear areas for hillwalking")
+                .setItems(names) { _, idx ->
+                    weatherBanner.visibility = View.GONE
+                    showHillSearch("${clearAreas[idx].areaName} hills")
+                }
+                .setNegativeButton("Close", null)
+                .show()
+        }
+        weatherBanner.visibility = View.VISIBLE
     }
 
     override fun onDestroy() {

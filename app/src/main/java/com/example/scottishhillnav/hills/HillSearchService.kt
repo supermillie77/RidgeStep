@@ -219,24 +219,18 @@ object HillSearchService {
             Math.abs(cached.lon - areaLon) < 0.01) {
             cached.allHills
         } else {
-            // 3. Overpass: fetch everything within 40 km once, cache it
+            // 3. Overpass: fetch everything within 40 km once, cache it.
+            // Uses overpassGet() so the kumi.systems mirror is tried on primary failure.
             val fetchRadiusM = 40_000
-            val opQuery =
-                "[out:json][timeout:30];" +
+            val opQuery = URLEncoder.encode(
+                "[out:json][timeout:20];" +
                 "(node[\"natural\"=\"peak\"](around:$fetchRadiusM,$areaLat,$areaLon);" +
                 "node[\"natural\"=\"hill\"](around:$fetchRadiusM,$areaLat,$areaLon);" +
                 "node[\"natural\"=\"ridge\"](around:$fetchRadiusM,$areaLat,$areaLon);" +
                 "way[\"natural\"=\"peak\"](around:$fetchRadiusM,$areaLat,$areaLon););" +
-                "out center tags;"
-            val opConn = URL(
-                "https://overpass-api.de/api/interpreter?data=${URLEncoder.encode(opQuery, "UTF-8")}"
-            ).openConnection() as HttpURLConnection
-            opConn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
-            opConn.connectTimeout = 12_000; opConn.readTimeout = 30_000
-            val elements = try {
-                JSONObject(opConn.inputStream.bufferedReader().readText()).optJSONArray("elements")
-            } catch (_: Exception) { null }
-            finally { opConn.disconnect() }
+                "out center tags;", "UTF-8"
+            )
+            val elements = overpassGet(opQuery, 20_000, 25_000)?.optJSONArray("elements")
 
             val hills = mutableListOf<HillResult>()
             if (elements != null) {
@@ -262,10 +256,11 @@ object HillSearchService {
             hills
         }
 
-        // 4. Filter to requested radius, sort nearest-first, disambiguate same-name hills
+        // 4. Filter to requested radius, sort nearest-first, disambiguate same-name hills.
+        // Compute haversine once per hill — filter and sort both need the same distance.
         val radiusM = radiusKm * 1000.0
-        val filtered = allHills.filter { haversine(it.lat, it.lon, areaLat, areaLon) <= radiusM }
-        val sorted = filtered.sortedBy { haversine(it.lat, it.lon, areaLat, areaLon) }
+        val withDist = allHills.map { it to haversine(it.lat, it.lon, areaLat, areaLon) }
+        val sorted = withDist.filter { (_, d) -> d <= radiusM }.sortedBy { (_, d) -> d }.map { (h, _) -> h }
         val nameGroups = sorted.groupBy { it.name }
         val final = sorted.map { r ->
             val group = nameGroups[r.name]!!
@@ -306,6 +301,7 @@ object HillSearchService {
 
         // ── Launch all 3 Overpass queries in parallel ─────────────────────────
         val executor = java.util.concurrent.Executors.newFixedThreadPool(3)
+        try {
 
         // Query 1: car parks within 30 km
         val futureParking = executor.submit<List<CarPark>> {
@@ -595,6 +591,10 @@ object HillSearchService {
             .sortedBy { haversine(lat, lon, it.lat, it.lon) }
         if (result.isNotEmpty()) carParkCache[cacheKey] = result
         return result
+        } finally {
+            // Ensure threads are released even if an unexpected exception bypasses the get() calls
+            if (!executor.isTerminated) executor.shutdownNow()
+        }
     }
 
     /**

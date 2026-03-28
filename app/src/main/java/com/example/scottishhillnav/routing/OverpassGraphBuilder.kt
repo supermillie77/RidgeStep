@@ -101,7 +101,8 @@ object OverpassGraphBuilder {
             for (j in 0 until wayNodes.size - 1) {
                 val aId = idMap[wayNodes[j]]     ?: continue
                 val bId = idMap[wayNodes[j + 1]] ?: continue
-                val a   = nodes[aId]!!; val b = nodes[bId]!!
+                val a   = nodes[aId] ?: continue
+                val b   = nodes[bId] ?: continue
                 val dist = haversine(a.lat, a.lon, b.lat, b.lon)
                 edgeMap.getOrPut(aId) { mutableListOf() }
                     .add(Edge(to = bId, cost = dist, requiredMask = Capability.WALKING))
