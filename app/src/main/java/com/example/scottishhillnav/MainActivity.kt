@@ -46,6 +46,7 @@ import com.example.scottishhillnav.navigation.VoiceNavigator
 import com.example.scottishhillnav.routing.*
 import com.example.scottishhillnav.ui.ElevationProfileView
 import com.example.scottishhillnav.ui.RouteGradientOverlay
+import com.example.scottishhillnav.ui.SummitOverlay
 import com.google.android.gms.location.*
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -256,6 +257,7 @@ class MainActivity : AppCompatActivity() {
 
         routeOverlay = RouteGradientOverlay { graph }
         map.overlays.add(routeOverlay)
+        map.overlays.add(SummitOverlay(resources.displayMetrics.density))
 
         // ── Stats FAB ────────────────────────────────────────────────────────
         val fab = FloatingActionButton(this).apply {
