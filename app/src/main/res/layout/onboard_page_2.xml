@@ -1,210 +1,198 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Page 2: Plan your route -->
+<!-- Page 3: From car park to summit — route schematic -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/ob_background">
 
-    <!-- Illustration -->
-    <FrameLayout
+    <!-- Hero: vertical route schematic (58%) -->
+    <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="55"
-        android:clipChildren="false"
-        android:clipToPadding="false">
+        android:layout_weight="58"
+        android:paddingTop="24dp"
+        android:paddingBottom="12dp">
 
-        <ImageView
-            android:layout_width="match_parent"
-            android:layout_height="110dp"
-            android:layout_gravity="bottom"
-            android:src="@drawable/ic_onboard_mountains"
-            android:scaleType="fitXY"
+        <!-- Vertical route line (centre) -->
+        <View
+            android:id="@+id/routeLine"
+            android:layout_width="3dp"
+            android:layout_height="match_parent"
+            android:layout_centerHorizontal="true"
+            android:background="#FF6B35"
             android:alpha="0.5"/>
 
-        <!-- Route card, tilted -2.5° -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="250dp"
-            android:layout_height="168dp"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="18dp"
-            android:rotation="-2.5"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="8dp"
-            app:cardBackgroundColor="@color/ob_card">
+        <!-- Summit top -->
+        <LinearLayout
+            android:id="@+id/summitBlock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerHorizontal="true"
+            android:layout_alignParentTop="true"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:background="@color/ob_background"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="8dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▲"
+                android:textColor="#FF6D00"
+                android:textSize="40sp"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Ben Nevis"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@color/ob_headline"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1,345 m summit"
+                android:textSize="10sp"
+                android:textColor="#FF6B35"/>
+        </LinearLayout>
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="vertical"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="14dp"
-                android:paddingBottom="14dp">
+        <!-- Car park bottom -->
+        <LinearLayout
+            android:id="@+id/parkBlock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerHorizontal="true"
+            android:layout_alignParentBottom="true"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:background="@color/ob_background"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="8dp">
+            <TextView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:text="P"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="#FF6B35"
+                android:gravity="center"
+                android:background="@drawable/bg_onboard_btn_primary"
+                android:alpha="0.3"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Visitor Centre car park"
+                android:textSize="11sp"
+                android:textColor="@color/ob_subtitle"/>
+        </LinearLayout>
 
-                <!-- Hill name header -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Ben Nevis"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/ob_headline"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Tourist Path"
-                    android:textSize="11sp"
-                    android:textColor="@color/ob_subtitle"
-                    android:layout_marginBottom="12dp"/>
+        <!-- Stat callouts — right of the line -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerVertical="true"
+            android:layout_centerHorizontal="true"
+            android:layout_marginStart="44dp"
+            android:layout_toEndOf="@id/routeLine"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="8.4 km"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@color/ob_headline"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="distance"
+                android:textSize="10sp"
+                android:textColor="@color/ob_subtitle"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="↑ 850 m"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@color/ob_headline"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ascent"
+                android:textSize="10sp"
+                android:textColor="@color/ob_subtitle"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="4h 30m"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="@color/ob_headline"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="est. time"
+                android:textSize="10sp"
+                android:textColor="@color/ob_subtitle"/>
+        </LinearLayout>
 
-                <!-- Route A→B bar -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+        <!-- Car park chip — left of the line -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerVertical="true"
+            android:layout_centerHorizontal="true"
+            android:layout_marginEnd="44dp"
+            android:layout_toStartOf="@id/routeLine"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/ob_surface"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="&#127359;"
+                android:textSize="12sp"
+                android:layout_marginEnd="4dp"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="4 car parks\nnearby"
+                android:textSize="9sp"
+                android:textColor="@color/ob_subtitle"/>
+        </LinearLayout>
 
-                    <!-- Start pin -->
-                    <TextView
-                        android:layout_width="28dp"
-                        android:layout_height="28dp"
-                        android:text="P"
-                        android:textColor="#FFFFFF"
-                        android:textSize="11sp"
-                        android:textStyle="bold"
-                        android:gravity="center"
-                        android:background="@drawable/bg_onboard_btn_primary"/>
+    </RelativeLayout>
 
-                    <!-- Dashed line (series of dots) -->
-                    <View
-                        android:layout_width="0dp"
-                        android:layout_height="2dp"
-                        android:layout_weight="1"
-                        android:layout_marginStart="6dp"
-                        android:layout_marginEnd="6dp"
-                        android:background="@color/ob_route_blue"/>
-
-                    <!-- Summit marker -->
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="▲"
-                        android:textColor="@color/nav_orange"
-                        android:textSize="22sp"/>
-                </LinearLayout>
-
-                <!-- Labels -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="4dp">
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Visitor Centre"
-                        android:textSize="9sp"
-                        android:textColor="@color/ob_subtitle"/>
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Summit"
-                        android:textSize="9sp"
-                        android:textColor="@color/ob_subtitle"/>
-                </LinearLayout>
-
-                <!-- Divider -->
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginTop="12dp"
-                    android:layout_marginBottom="10dp"
-                    android:background="#EEEAE3"/>
-
-                <!-- Stats row -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                        android:layout_weight="1" android:orientation="vertical" android:gravity="center_horizontal">
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:text="8.4 km" android:textSize="13sp" android:textStyle="bold"
-                            android:textColor="@color/ob_headline"/>
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:text="Distance" android:textSize="9sp" android:textColor="@color/ob_subtitle"/>
-                    </LinearLayout>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                        android:layout_weight="1" android:orientation="vertical" android:gravity="center_horizontal">
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:text="850 m" android:textSize="13sp" android:textStyle="bold"
-                            android:textColor="@color/ob_headline"/>
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:text="Ascent" android:textSize="9sp" android:textColor="@color/ob_subtitle"/>
-                    </LinearLayout>
-
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                        android:layout_weight="1" android:orientation="vertical" android:gravity="center_horizontal">
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:text="4h 30m" android:textSize="13sp" android:textStyle="bold"
-                            android:textColor="@color/ob_headline"/>
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:text="Est. time" android:textSize="9sp" android:textColor="@color/ob_subtitle"/>
-                    </LinearLayout>
-                </LinearLayout>
-
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
-
-        <!-- Floating car park chip, tilted +3° -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="200dp"
-            android:layout_height="44dp"
-            android:layout_gravity="bottom|start"
-            android:layout_marginStart="22dp"
-            android:layout_marginBottom="20dp"
-            android:rotation="3"
-            app:cardCornerRadius="22dp"
-            app:cardElevation="5dp"
-            app:cardBackgroundColor="@color/ob_card">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="🅿" android:textSize="14sp" android:layout_marginEnd="8dp"/>
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="4 car parks found nearby"
-                    android:textSize="11sp" android:textColor="@color/ob_headline"/>
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
-
-    </FrameLayout>
-
-    <!-- Text -->
+    <!-- Text (42%) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="45"
+        android:layout_weight="42"
         android:orientation="vertical"
         android:paddingStart="28dp"
         android:paddingEnd="28dp"
-        android:paddingTop="28dp">
+        android:paddingTop="16dp">
+
+        <View
+            android:layout_width="32dp"
+            android:layout_height="3dp"
+            android:background="#FF6B35"
+            android:layout_marginBottom="14dp"/>
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Plan your route"
-            android:textSize="30sp"
+            android:textSize="28sp"
             android:textStyle="bold"
             android:textColor="@color/ob_headline"
             android:lineSpacingMultiplier="1.1"/>
@@ -212,9 +200,9 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="10dp"
             android:text="Search for a hill, pick your car park, and get a real footpath route with distance and ascent"
-            android:textSize="15sp"
+            android:textSize="14sp"
             android:textColor="@color/ob_subtitle"
             android:lineSpacingMultiplier="1.4"/>
 
