@@ -1790,6 +1790,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateSheetForNoRoute() {
         addSummitRow.visibility = View.GONE
+        bottomSheetBehavior.peekHeight = (resources.displayMetrics.density * 140).toInt()
         sheetTitle.text    = selectedHill?.let { "To: ${it.name}" } ?: "Route: —"
         hillPronounceBtn.visibility = if (selectedHill != null) View.VISIBLE else View.GONE
         sheetSubtitle.text = when {
@@ -1820,6 +1821,9 @@ class MainActivity : AppCompatActivity() {
         val gradeLabel = RouteWarningPolicy.gradeLabel(grade)
 
         addSummitRow.visibility = View.VISIBLE
+        // Expand peek so the "Add another hill" chip and Distance/Ascent/Time stats are
+        // fully visible without requiring the user to swipe up the sheet.
+        bottomSheetBehavior.peekHeight = (resources.displayMetrics.density * 220).toInt()
         sheetTitle.text    = r.name
         hillPronounceBtn.visibility = if (selectedHill != null) View.VISIBLE else View.GONE
         sheetSubtitle.text = "$gradeLabel   •   ${r.shortDescription}   •   Tap ℹ for live stats"
