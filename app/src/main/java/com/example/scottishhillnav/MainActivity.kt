@@ -61,7 +61,7 @@ import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import org.osmdroid.tileprovider.MapTile
+
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.MapTileIndex
@@ -2910,7 +2910,7 @@ class MainActivity : AppCompatActivity() {
                 val maxY = latToTileY(lat - latDelta, zoom)
                 for (x in minX..maxX) {
                     for (y in minY..maxY) {
-                        tileProvider.requestMapTile(MapTile(zoom, x, y), false)
+                        tileProvider.getMapTile(MapTileIndex.getTileIndex(zoom, x, y))
                     }
                 }
             }
