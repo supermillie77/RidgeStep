@@ -3,8 +3,9 @@ package com.example.scottishhillnav.routing
 
 import android.content.Context
 import android.util.Log
-import java.io.DataInputStream
-import java.io.EOFException
+import java.io.BufferedInputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 object GraphStore {
 
@@ -108,98 +109,89 @@ object GraphStore {
         V2_ID_META_LAT_LON_ELE(20)
     }
 
+    /**
+     * Reads the entire asset file into a ByteArray in one call, then parses
+     * via ByteBuffer. This is ~5-10× faster than reading field-by-field with
+     * DataInputStream, which issues a separate native I/O call per readInt/readFloat
+     * — ~2.5 M calls for the bundled Scotland pack.
+     *
+     * Also avoids the AvailableInputStream.available() unreliability on some Android
+     * versions (may return fewer bytes than the actual file size, breaking format detection).
+     */
     private fun readNodesFromAssetsAuto(
         context: Context,
         assetPath: String
     ): Map<Int, Node> {
+        val bytes = context.assets.open(assetPath).use { BufferedInputStream(it).readBytes() }
+        val buf   = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN)
 
-        context.assets.open(assetPath).use { stream ->
-            DataInputStream(stream).use { input ->
+        val count = buf.int
+        require(count > 0) { "nodes.bin invalid count=$count" }
 
-                val count = input.readInt()
-                require(count > 0) { "nodes.bin invalid count=$count" }
+        // Derive bytes-per-node from actual file size rather than available() heuristic
+        val bytesPerNode = (bytes.size - 4) / count
 
-                val payloadBytes = input.available().toLong()
-                val bytesPerNode = payloadBytes / count.toLong()
+        val format = when (bytesPerNode) {
+            NodeFormat.V0_ID_LAT_LON.bytesPerNode       -> NodeFormat.V0_ID_LAT_LON
+            NodeFormat.V1_ID_META_LAT_LON.bytesPerNode  -> NodeFormat.V1_ID_META_LAT_LON
+            NodeFormat.V2_ID_META_LAT_LON_ELE.bytesPerNode -> NodeFormat.V2_ID_META_LAT_LON_ELE
+            else -> throw IllegalStateException(
+                "Unsupported nodes.bin record size: bytesPerNode=$bytesPerNode (expected 12, 16, or 20)"
+            )
+        }
 
-                val format = when (bytesPerNode.toInt()) {
-                    NodeFormat.V0_ID_LAT_LON.bytesPerNode -> NodeFormat.V0_ID_LAT_LON
-                    NodeFormat.V1_ID_META_LAT_LON.bytesPerNode -> NodeFormat.V1_ID_META_LAT_LON
-                    NodeFormat.V2_ID_META_LAT_LON_ELE.bytesPerNode -> NodeFormat.V2_ID_META_LAT_LON_ELE
-                    else -> {
-                        throw IllegalStateException(
-                            "Unsupported nodes.bin record size in assets: bytesPerNode=$bytesPerNode (expected 12, 16, or 20)."
-                        )
-                    }
+        Log.e(TAG, "nodes.bin format=$format count=$count bytesPerNode=$bytesPerNode")
+
+        // Size for 0.75 load factor — avoids any rehash during population
+        val nodes = HashMap<Int, Node>((count * 4 + 2) / 3)
+
+        repeat(count) {
+            when (format) {
+                NodeFormat.V0_ID_LAT_LON -> {
+                    val id  = buf.int
+                    val lat = buf.float.toDouble()
+                    val lon = buf.float.toDouble()
+                    nodes[id] = Node(lat = lat, lon = lon, elevation = 0.0)
                 }
-
-                Log.e(TAG, "nodes.bin assets format=$format count=$count bytesPerNode=$bytesPerNode")
-
-                val nodes = HashMap<Int, Node>(count * 2)
-
-                try {
-                    repeat(count) {
-                        when (format) {
-
-                            NodeFormat.V0_ID_LAT_LON -> {
-                                val id = input.readInt()
-                                val lat = input.readFloat().toDouble()
-                                val lon = input.readFloat().toDouble()
-                                nodes[id] = Node(lat = lat, lon = lon, elevation = 0.0)
-                            }
-
-                            NodeFormat.V1_ID_META_LAT_LON -> {
-                                val id = input.readInt()
-                                val meta = input.readInt()
-                                val lat = input.readFloat().toDouble()
-                                val lon = input.readFloat().toDouble()
-                                nodes[id] = Node(lat = lat, lon = lon, elevation = 0.0)
-                            }
-
-                            NodeFormat.V2_ID_META_LAT_LON_ELE -> {
-                                val id = input.readInt()
-                                val meta = input.readInt()
-                                val lat = input.readFloat().toDouble()
-                                val lon = input.readFloat().toDouble()
-                                val ele = input.readFloat().toDouble()
-                                nodes[id] = Node(lat = lat, lon = lon, elevation = ele)
-                            }
-                        }
-                    }
-                } catch (e: EOFException) {
-                    throw IllegalStateException(
-                        "nodes.bin assets ended unexpectedly (EOF). count=$count format=$format",
-                        e
-                    )
+                NodeFormat.V1_ID_META_LAT_LON -> {
+                    val id  = buf.int
+                    buf.int  // meta field — unused
+                    val lat = buf.float.toDouble()
+                    val lon = buf.float.toDouble()
+                    nodes[id] = Node(lat = lat, lon = lon, elevation = 0.0)
                 }
-
-                return nodes
+                NodeFormat.V2_ID_META_LAT_LON_ELE -> {
+                    val id  = buf.int
+                    buf.int  // meta field — unused
+                    val lat = buf.float.toDouble()
+                    val lon = buf.float.toDouble()
+                    val ele = buf.float.toDouble()
+                    nodes[id] = Node(lat = lat, lon = lon, elevation = ele)
+                }
             }
         }
+
+        return nodes
     }
 
     private fun readEdgesFromAssets(
         context: Context,
         assetPath: String
     ): Map<Int, List<Edge>> {
+        val bytes = context.assets.open(assetPath).use { BufferedInputStream(it).readBytes() }
+        val buf   = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN)
 
-        context.assets.open(assetPath).use { stream ->
-            DataInputStream(stream).use { input ->
+        val count = buf.int
+        // Pre-size assuming ~2 edges per node on average; avoids repeated rehashing
+        val edges = HashMap<Int, MutableList<Edge>>(count / 2 + 16)
 
-                val edges = HashMap<Int, MutableList<Edge>>()
-
-                val count = input.readInt()
-                repeat(count) {
-                    val from = input.readInt()
-                    val to = input.readInt()
-                    val cost = input.readFloat().toDouble()
-
-                    edges.getOrPut(from) { mutableListOf() }
-                        .add(Edge(to = to, cost = cost))
-                }
-
-                return edges.mapValues { it.value.toList() }
-            }
+        repeat(count) {
+            val from = buf.int
+            val to   = buf.int
+            val cost = buf.float.toDouble()
+            edges.getOrPut(from) { mutableListOf() }.add(Edge(to = to, cost = cost))
         }
+
+        return edges.mapValues { it.value.toList() }
     }
 }

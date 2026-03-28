@@ -246,7 +246,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             setTileSource(outdoorsSource)
-            controller.setZoom(6.0)
+            controller.setZoom(8.0)
             controller.setCenter(GeoPoint(57.0, -4.5))  // Scotland overview — GPS will refine on first fix
         }
         root.addView(map, CoordinatorLayout.LayoutParams(
