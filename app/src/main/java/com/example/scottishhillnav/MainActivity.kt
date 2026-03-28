@@ -278,19 +278,24 @@ class MainActivity : AppCompatActivity() {
         map = MapView(this).apply {
             setMultiTouchControls(true)
             setBuiltInZoomControls(true)
-            val key = "cc4acfb2bb5d4b58b6249766f071e3c7"
-            val outdoorsSource = object : OnlineTileSourceBase(
-                "ThunderforestOutdoors", 0, 22, 256, ".png",
-                arrayOf("https://tile.thunderforest.com/")
+            val topoSource = object : OnlineTileSourceBase(
+                "OpenTopoMap", 0, 17, 256, ".png",
+                arrayOf(
+                    "https://tile.opentopomap.org/",
+                    "https://a.tile.opentopomap.org/",
+                    "https://b.tile.opentopomap.org/",
+                    "https://c.tile.opentopomap.org/"
+                )
             ) {
                 override fun getTileURLString(pMapTileIndex: Long): String {
                     val z = MapTileIndex.getZoom(pMapTileIndex)
                     val x = MapTileIndex.getX(pMapTileIndex)
                     val y = MapTileIndex.getY(pMapTileIndex)
-                    return "https://tile.thunderforest.com/atlas/$z/$x/$y.png?apikey=$key"
+                    val base = baseUrl.trimEnd('/')
+                    return "$base/$z/$x/$y.png"
                 }
             }
-            setTileSource(outdoorsSource)
+            setTileSource(topoSource)
             controller.setZoom(8.0)
             controller.setCenter(GeoPoint(57.0, -4.5))  // Scotland overview — GPS will refine on first fix
         }
