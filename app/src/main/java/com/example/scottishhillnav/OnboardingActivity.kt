@@ -15,6 +15,7 @@ class OnboardingActivity : AppCompatActivity() {
 
     private val pageLayouts = intArrayOf(
         R.layout.onboard_page_1,
+        R.layout.onboard_page_categories,
         R.layout.onboard_page_2,
         R.layout.onboard_page_3,
         R.layout.onboard_page_4
