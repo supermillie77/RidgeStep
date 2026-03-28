@@ -54,6 +54,9 @@ import com.google.android.material.floatingactionbutton.ExtendedFloatingActionBu
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import org.osmdroid.tileprovider.MapTile
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.MapTileIndex
@@ -204,6 +207,7 @@ class MainActivity : AppCompatActivity() {
                     loc.latitude  - latDelta, loc.longitude - lonDelta
                 )
                 map.post { map.zoomToBoundingBox(bbox, true) }
+                preCacheTiles(loc.latitude, loc.longitude)
                 if (!hasCheckedWeather) {
                     hasCheckedWeather = true
                     checkWeatherForLocation(loc.latitude, loc.longitude)
@@ -225,7 +229,26 @@ class MainActivity : AppCompatActivity() {
         Configuration.getInstance().apply {
             load(this@MainActivity, getSharedPreferences("osm", MODE_PRIVATE))
             userAgentValue = packageName
-            osmdroidTileCache = java.io.File(cacheDir, "osmdroid")
+
+            // Persistent tile cache — external app files dir won't be cleared by
+            // the OS under storage pressure (unlike cacheDir).  Falls back to
+            // internal files dir on devices with no external storage.
+            osmdroidTileCache = (getExternalFilesDir("osmdroid_tiles")
+                ?: java.io.File(filesDir, "osmdroid_tiles")).also { it.mkdirs() }
+
+            // 1 GB on-disk tile cache — enough for full UK coverage at zoom 7–16
+            tileFileSystemCacheMaxBytes      = 1_024L * 1_024 * 1_024        // 1 GB
+            tileFileSystemCacheTrimBytes     = 900L   * 1_024 * 1_024        // trim to 900 MB
+
+            // Tiles remain valid for 30 days — hill maps change infrequently
+            expirationOverrideDuration       = 30L * 24 * 60 * 60 * 1_000   // 30 days ms
+
+            // Keep 256 decoded tiles in memory (default is 9 — far too few)
+            cacheMapTileCount                = 256.toShort()
+
+            // 4 download threads — faster first-load in good signal areas
+            tileDownloadThreads              = 4.toShort()
+            tileDownloadMaxQueueSize         = 40.toShort()
         }
 
         DemProvider.init(this)
@@ -2790,6 +2813,48 @@ class MainActivity : AppCompatActivity() {
                 setSelection(spoken.length)
             }
         }
+    }
+
+    // ── Tile pre-caching ──────────────────────────────────────────────────────
+
+    /**
+     * Downloads and caches map tiles for the 5-mile area around [lat]/[lon]
+     * at zoom levels 8–15, only when a network connection is available.
+     * Runs entirely on a background thread; safe to call from the UI thread.
+     */
+    private fun preCacheTiles(lat: Double, lon: Double) {
+        if (!isNetworkAvailable()) return
+        Thread {
+            val radiusM   = 8047.2   // 5 miles
+            val latDelta  = radiusM / 111320.0
+            val lonDelta  = radiusM / (111320.0 * Math.cos(Math.toRadians(lat)))
+            val tileProvider = map.tileProvider
+            for (zoom in 8..15) {
+                val minX = lonToTileX(lon - lonDelta, zoom)
+                val maxX = lonToTileX(lon + lonDelta, zoom)
+                val minY = latToTileY(lat + latDelta, zoom)
+                val maxY = latToTileY(lat - latDelta, zoom)
+                for (x in minX..maxX) {
+                    for (y in minY..maxY) {
+                        tileProvider.requestMapTile(MapTile(zoom, x, y), false)
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun lonToTileX(lon: Double, zoom: Int): Int =
+        ((lon + 180.0) / 360.0 * (1 shl zoom)).toInt()
+
+    private fun latToTileY(lat: Double, zoom: Int): Int {
+        val rad = Math.toRadians(lat)
+        return ((1.0 - Math.log(Math.tan(rad) + 1.0 / Math.cos(rad)) / Math.PI) / 2.0 * (1 shl zoom)).toInt()
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cap = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return cap.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     // ── Weather ───────────────────────────────────────────────────────────────
