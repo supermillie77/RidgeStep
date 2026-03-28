@@ -35,16 +35,20 @@ object WeatherService {
         }
     }
 
-    /** Preset Scottish hill areas checked when looking for clear conditions. */
+    /** Preset UK hill areas checked when looking for clear conditions. */
     private val SCOTTISH_AREAS = listOf(
-        Triple("Cairngorms",  57.12, -3.73),
-        Triple("Glencoe",     56.67, -4.96),
-        Triple("Torridon",    57.56, -5.47),
-        Triple("Skye",        57.21, -6.17),
-        Triple("Loch Lomond", 56.19, -4.63),
-        Triple("Trossachs",   56.27, -4.33),
-        Triple("Moray",       57.65, -3.32),
-        Triple("Sutherland",  58.30, -4.56)
+        Triple("Cairngorms",       57.12, -3.73),
+        Triple("Glencoe",          56.67, -4.96),
+        Triple("Torridon",         57.56, -5.47),
+        Triple("Skye",             57.21, -6.17),
+        Triple("Loch Lomond",      56.19, -4.63),
+        Triple("Trossachs",        56.27, -4.33),
+        Triple("Moray",            57.65, -3.32),
+        Triple("Sutherland",       58.30, -4.56),
+        Triple("Lake District",    54.47, -3.08),
+        Triple("Snowdonia",        53.07, -3.97),
+        Triple("Peak District",    53.37, -1.82),
+        Triple("Yorkshire Dales",  54.22, -2.16)
     )
 
     /**

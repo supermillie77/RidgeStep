@@ -381,10 +381,10 @@ class MainActivity : AppCompatActivity() {
         ))
         topBannerContainer.addView(driveBanner)
 
-        // Weather warning banner (shown when conditions at user's location are poor)
+        // Weather banner (always shown after first GPS fix; colour reflects conditions)
         weatherBanner = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(0xFF37474F.toInt())  // blue-grey
+            setBackgroundColor(0xFF2E4A1E.toInt())  // default: dark green (good conditions)
             val ph = (resources.displayMetrics.density * 12).toInt()
             val pv = (resources.displayMetrics.density * 8).toInt()
             setPadding(ph, pv, (resources.displayMetrics.density * 6).toInt(), pv)
@@ -2765,14 +2765,12 @@ class MainActivity : AppCompatActivity() {
 
     // ── Weather ───────────────────────────────────────────────────────────────
 
-    /** Checks weather at [lat]/[lon] on a background thread. Shows a banner if conditions are poor. */
+    /** Checks weather at [lat]/[lon] on a background thread. Always shows a banner with current conditions. */
     private fun checkWeatherForLocation(lat: Double, lon: Double) {
         Thread {
-            val current = WeatherService.fetchCurrent(lat, lon)
-            if (current != null && current.isPoor) {
-                val clearAreas = WeatherService.findClearAreas()
-                runOnUiThread { showWeatherBanner(current, clearAreas) }
-            }
+            val current = WeatherService.fetchCurrent(lat, lon) ?: return@Thread
+            val clearAreas = if (current.isPoor) WeatherService.findClearAreas() else emptyList()
+            runOnUiThread { showWeatherBanner(current, clearAreas) }
         }.start()
     }
 
@@ -2780,22 +2778,38 @@ class MainActivity : AppCompatActivity() {
         current: WeatherService.AreaWeather,
         clearAreas: List<WeatherService.AreaWeather>
     ) {
+        val emoji = when {
+            current.code == 0       -> "\u2600"   // ☀
+            current.code in 1..3    -> "\u26c5"   // ⛅
+            current.code in 45..48  -> "\uD83C\uDF2B"  // 🌫
+            current.code in 51..65  -> "\uD83C\uDF27"  // 🌧
+            current.code in 71..77  -> "\u2744"   // ❄
+            current.code >= 95      -> "\u26C8"   // ⛈
+            else                    -> "\u2601"   // ☁
+        }
+        val windText = if (current.windKmh >= 20) "  \u00B7  ${current.windKmh.toInt()} km/h wind" else ""
+        weatherBanner.setBackgroundColor(
+            if (current.isPoor) 0xFF37474F.toInt()   // blue-grey: poor conditions
+            else                0xFF2E4A1E.toInt()    // dark green: good conditions
+        )
         weatherBannerText.text =
-            "\u2601 ${current.description.replaceFirstChar { it.uppercaseChar() }} at your location"
-        weatherFindBtn.setOnClickListener {
-            if (clearAreas.isEmpty()) {
-                Toast.makeText(this, "No clear areas found nearby", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+            "$emoji ${current.description.replaceFirstChar { it.uppercaseChar() }}$windText"
+
+        if (current.isPoor && clearAreas.isNotEmpty()) {
+            weatherFindBtn.visibility = View.VISIBLE
+            weatherFindBtn.setOnClickListener {
+                val names = clearAreas.map { "\u2600 ${it.areaName}  (${it.description})" }.toTypedArray()
+                AlertDialog.Builder(this)
+                    .setTitle("Clear areas for hillwalking")
+                    .setItems(names) { _, idx ->
+                        weatherBanner.visibility = View.GONE
+                        showHillSearch("${clearAreas[idx].areaName} hills")
+                    }
+                    .setNegativeButton("Close", null)
+                    .show()
             }
-            val names = clearAreas.map { "\u2600 ${it.areaName}  (${it.description})" }.toTypedArray()
-            AlertDialog.Builder(this)
-                .setTitle("Clear areas for hillwalking")
-                .setItems(names) { _, idx ->
-                    weatherBanner.visibility = View.GONE
-                    showHillSearch("${clearAreas[idx].areaName} hills")
-                }
-                .setNegativeButton("Close", null)
-                .show()
+        } else {
+            weatherFindBtn.visibility = View.GONE
         }
         weatherBanner.visibility = View.VISIBLE
     }
