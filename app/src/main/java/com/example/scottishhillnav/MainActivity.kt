@@ -54,6 +54,11 @@ import com.google.android.material.floatingactionbutton.ExtendedFloatingActionBu
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import org.osmdroid.tileprovider.MapTile
@@ -140,6 +145,9 @@ class MainActivity : AppCompatActivity() {
     private var addingSummit = false               // true when hill search is in "add waypoint" mode
     private var hasAnimatedToUser = false          // pans map to GPS location on first fix
     private var hasCheckedWeather = false          // weather check fires once after first GPS fix
+    private var programmaticScroll = false         // true during auto-zoom so scroll events don't falsely trigger locate button
+    private lateinit var myLocationOverlay: MyLocationNewOverlay
+    private lateinit var locateFab: FloatingActionButton
     private lateinit var weatherBanner: LinearLayout
     private lateinit var weatherBannerText: TextView
     private lateinit var weatherFindBtn: TextView
@@ -206,7 +214,11 @@ class MainActivity : AppCompatActivity() {
                     loc.latitude  + latDelta, loc.longitude + lonDelta,
                     loc.latitude  - latDelta, loc.longitude - lonDelta
                 )
-                map.post { map.zoomToBoundingBox(bbox, true) }
+                programmaticScroll = true
+                map.post {
+                    map.zoomToBoundingBox(bbox, true)
+                    map.postDelayed({ programmaticScroll = false }, 1_500)
+                }
                 preCacheTiles(loc.latitude, loc.longitude)
                 if (!hasCheckedWeather) {
                     hasCheckedWeather = true
@@ -291,6 +303,13 @@ class MainActivity : AppCompatActivity() {
         map.overlays.add(routeOverlay)
         map.overlays.add(SummitOverlay(resources.displayMetrics.density))
 
+        // ── User location overlay (blue dot + accuracy ring) ─────────────────
+        myLocationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(this), map).apply {
+            // Don't auto-follow — we handle zoom/centre ourselves
+            disableFollowLocation()
+        }
+        map.overlays.add(myLocationOverlay)
+
         // ── SharedPreferences: track first-use of each button ────────────────
         val btnPrefs = getSharedPreferences("button_state", MODE_PRIVATE)
 
@@ -370,6 +389,35 @@ class MainActivity : AppCompatActivity() {
             setMargins(margin, margin, margin, peekOff + (fabSize + margin) * 2)
         }
         root.addView(hillFab, hillFabParams)
+
+        // ── Locate FAB (bottom-left) — appears when user pans away from their position ──
+        locateFab = FloatingActionButton(this).apply {
+            setImageResource(R.drawable.ic_my_location)
+            contentDescription = "Return to my location"
+            visibility = View.GONE
+            setOnClickListener { returnToMyLocation() }
+        }
+        val locateFabParams = CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            val margin    = (resources.displayMetrics.density * 16).toInt()
+            val peekOffset = (resources.displayMetrics.density * 156).toInt()
+            setMargins(margin, margin, margin, peekOffset)
+        }
+        root.addView(locateFab, locateFabParams)
+
+        // Show locate button when user manually pans — but not during the initial GPS animation
+        map.addMapListener(object : MapListener {
+            override fun onScroll(event: ScrollEvent): Boolean {
+                if (lastLocation != null && !programmaticScroll) {
+                    locateFab.visibility = View.VISIBLE
+                }
+                return false
+            }
+            override fun onZoom(event: ZoomEvent): Boolean = false
+        })
 
         // ── Top banners container: drive + weather stack vertically at screen top ─
         val topBannerContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -725,11 +773,13 @@ class MainActivity : AppCompatActivity() {
             .setMinUpdateIntervalMillis(1500L)
             .build()
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+        myLocationOverlay.enableMyLocation()
     }
 
     override fun onPause() {
         super.onPause()
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        myLocationOverlay.disableMyLocation()
         stopPopupUpdates()
     }
 
@@ -2813,6 +2863,25 @@ class MainActivity : AppCompatActivity() {
                 setSelection(spoken.length)
             }
         }
+    }
+
+    // ── Locate / return to user position ─────────────────────────────────────
+
+    private fun returnToMyLocation() {
+        val loc = lastLocation ?: return
+        val radiusM  = 8047.2
+        val latDelta = radiusM / 111320.0
+        val lonDelta = radiusM / (111320.0 * Math.cos(Math.toRadians(loc.latitude)))
+        val bbox = BoundingBox(
+            loc.latitude + latDelta, loc.longitude + lonDelta,
+            loc.latitude - latDelta, loc.longitude - lonDelta
+        )
+        programmaticScroll = true
+        map.post {
+            map.zoomToBoundingBox(bbox, true)
+            map.postDelayed({ programmaticScroll = false }, 1_500)
+        }
+        locateFab.visibility = View.GONE
     }
 
     // ── Tile pre-caching ──────────────────────────────────────────────────────
