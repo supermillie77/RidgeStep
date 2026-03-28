@@ -78,10 +78,17 @@ object WeatherService {
     }
 
     /**
-     * Checks weather at each preset Scottish hill area and returns those with good conditions.
-     * Call from a background thread — makes up to 8 HTTP requests in parallel.
+     * Checks weather at each preset UK hill area and returns those with good conditions.
+     * Call from a background thread.
      */
-    fun findClearAreas(): List<AreaWeather> {
+    fun findClearAreas(): List<AreaWeather> = fetchAllAreasWeather().filter { it.isGood }
+
+    /**
+     * Checks weather at all preset UK hill areas and returns every result regardless
+     * of condition. The list is sorted good-first, then alphabetically.
+     * Call from a background thread — makes HTTP requests in parallel.
+     */
+    fun fetchAllAreasWeather(): List<AreaWeather> {
         val executor = java.util.concurrent.Executors.newFixedThreadPool(4)
         val futures = SCOTTISH_AREAS.map { (name, lat, lon) ->
             executor.submit<AreaWeather?> {
@@ -111,7 +118,7 @@ object WeatherService {
             futures.mapNotNull { f ->
                 try { f.get(10, java.util.concurrent.TimeUnit.SECONDS) }
                 catch (_: Exception) { null }
-            }.filter { it.isGood }
+            }.sortedWith(compareByDescending<AreaWeather> { it.isGood }.thenBy { it.areaName })
         } finally {
             if (!executor.isTerminated) executor.shutdownNow()
         }

@@ -47,6 +47,7 @@ import com.example.scottishhillnav.navigation.RouteIndex
 import com.example.scottishhillnav.navigation.VoiceNavigator
 import com.example.scottishhillnav.routing.*
 import com.example.scottishhillnav.ui.ElevationProfileView
+import com.example.scottishhillnav.ui.LocationDotOverlay
 import com.example.scottishhillnav.ui.NearbyHillsSheet
 import com.example.scottishhillnav.ui.RouteGradientOverlay
 import com.example.scottishhillnav.ui.SummitInfoSheet
@@ -60,8 +61,6 @@ import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
-import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 
@@ -149,7 +148,7 @@ class MainActivity : AppCompatActivity() {
     private var hasAnimatedToUser = false          // pans map to GPS location on first fix
     private var hasCheckedWeather = false          // weather check fires once after first GPS fix
     private var programmaticScroll = false         // true during auto-zoom so scroll events don't falsely trigger locate button
-    private lateinit var myLocationOverlay: MyLocationNewOverlay
+    private lateinit var locationDotOverlay: LocationDotOverlay
     private lateinit var locateFab: FloatingActionButton
     private lateinit var weatherBanner: LinearLayout
     private lateinit var weatherBannerText: TextView
@@ -207,6 +206,8 @@ class MainActivity : AppCompatActivity() {
         override fun onLocationResult(result: LocationResult) {
             val loc = result.lastLocation ?: return
             lastLocation = loc
+            locationDotOverlay.location = loc
+            map.invalidate()
             // On the very first GPS fix: zoom map to 5-mile radius around user and check weather
             if (!hasAnimatedToUser) {
                 hasAnimatedToUser = true
@@ -311,12 +312,9 @@ class MainActivity : AppCompatActivity() {
         map.overlays.add(routeOverlay)
         map.overlays.add(SummitOverlay(resources.displayMetrics.density))
 
-        // ── User location overlay (blue dot + accuracy ring) ─────────────────
-        myLocationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(this), map).apply {
-            // Don't auto-follow — we handle zoom/centre ourselves
-            disableFollowLocation()
-        }
-        map.overlays.add(myLocationOverlay)
+        // ── User location overlay (blue dot fed from fused client) ───────────
+        locationDotOverlay = LocationDotOverlay(resources.displayMetrics.density)
+        map.overlays.add(locationDotOverlay)
 
         // ── SharedPreferences: track first-use of each button ────────────────
         val btnPrefs = getSharedPreferences("button_state", MODE_PRIVATE)
@@ -489,28 +487,28 @@ class MainActivity : AppCompatActivity() {
         weatherBanner = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF2E4A1E.toInt())  // default: dark green (good conditions)
-            val ph = (resources.displayMetrics.density * 12).toInt()
-            val pv = (resources.displayMetrics.density * 8).toInt()
-            setPadding(ph, pv, (resources.displayMetrics.density * 6).toInt(), pv)
+            val ph = (resources.displayMetrics.density * 16).toInt()
+            val pv = (resources.displayMetrics.density * 14).toInt()
+            setPadding(ph, pv, (resources.displayMetrics.density * 8).toInt(), pv)
             gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
         }
         weatherBannerText = TextView(this).apply {
-            textSize = 12.5f
+            textSize = 15f
             setTextColor(Color.WHITE)
         }
         weatherFindBtn = TextView(this).apply {
-            text = "Find clear areas"
-            textSize = 12f
+            text = "UK forecast"
+            textSize = 13f
             setTextColor(0xFF80DEEA.toInt())
-            val ph = (resources.displayMetrics.density * 10).toInt()
+            val ph = (resources.displayMetrics.density * 12).toInt()
             setPadding(ph, 0, (resources.displayMetrics.density * 4).toInt(), 0)
         }
         val weatherDismissBtn = TextView(this).apply {
             text = "✕"
-            textSize = 14f
+            textSize = 16f
             setTextColor(0xFFB0BEC5.toInt())
-            val ph = (resources.displayMetrics.density * 6).toInt()
+            val ph = (resources.displayMetrics.density * 8).toInt()
             setPadding(ph, 0, 0, 0)
             setOnClickListener { weatherBanner.visibility = View.GONE }
         }
@@ -724,7 +722,25 @@ class MainActivity : AppCompatActivity() {
                 handleTap(p); return true
             }
             override fun longPressHelper(p: GeoPoint): Boolean {
-                clearRoutes(); return true
+                // Long-press on or near a summit triangle → show info card
+                val threshold = summitTapThresholdMeters()
+                val nearest = HillRepository.hills.minByOrNull {
+                    haversine(p.latitude, p.longitude, it.summitLat, it.summitLon)
+                }
+                if (nearest != null) {
+                    val dist = haversine(p.latitude, p.longitude, nearest.summitLat, nearest.summitLon)
+                    if (dist < threshold) {
+                        val loc = lastLocation
+                        val userDist = if (loc != null)
+                            haversine(loc.latitude, loc.longitude, nearest.summitLat, nearest.summitLon)
+                        else -1.0
+                        showSummitInfoSheet(nearest, userDist)
+                        return true
+                    }
+                }
+                // Long-press away from summits → clear current route
+                clearRoutes()
+                return true
             }
         }))
 
@@ -799,13 +815,11 @@ class MainActivity : AppCompatActivity() {
             .setMinUpdateIntervalMillis(1500L)
             .build()
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-        myLocationOverlay.enableMyLocation()
     }
 
     override fun onPause() {
         super.onPause()
         fusedLocationClient.removeLocationUpdates(locationCallback)
-        myLocationOverlay.disableMyLocation()
         stopPopupUpdates()
     }
 
@@ -1064,26 +1078,6 @@ class MainActivity : AppCompatActivity() {
     // ── Route building ────────────────────────────────────────────────────────
 
     private fun handleTap(p: GeoPoint) {
-        // Check if the tap landed on a summit triangle — show info card instead of placing a pin
-        // Only intercept when no route is in progress (no pins placed yet)
-        if (tapPoints.isEmpty() && navPhase == NavPhase.IDLE) {
-            val threshold = summitTapThresholdMeters()
-            val nearest = HillRepository.hills.minByOrNull {
-                haversine(p.latitude, p.longitude, it.summitLat, it.summitLon)
-            }
-            if (nearest != null) {
-                val dist = haversine(p.latitude, p.longitude, nearest.summitLat, nearest.summitLon)
-                if (dist < threshold) {
-                    val loc = lastLocation
-                    val userDist = if (loc != null)
-                        haversine(loc.latitude, loc.longitude, nearest.summitLat, nearest.summitLon)
-                    else -1.0
-                    showSummitInfoSheet(nearest, userDist)
-                    return
-                }
-            }
-        }
-
         when {
             navPhase == NavPhase.HILL_NAV && tapPoints.size == 1 -> {
                 // Hill was pre-selected (destination already set); first map tap = Start
@@ -3071,26 +3065,27 @@ class MainActivity : AppCompatActivity() {
     /** Checks weather at [lat]/[lon] on a background thread. Always shows a banner with current conditions. */
     private fun checkWeatherForLocation(lat: Double, lon: Double) {
         Thread {
-            val current = WeatherService.fetchCurrent(lat, lon) ?: return@Thread
-            val clearAreas = if (current.isPoor) WeatherService.findClearAreas() else emptyList()
-            runOnUiThread { showWeatherBanner(current, clearAreas) }
+            val current  = WeatherService.fetchCurrent(lat, lon) ?: return@Thread
+            val allAreas = WeatherService.fetchAllAreasWeather()   // always fetch all 12 areas
+            runOnUiThread { showWeatherBanner(current, allAreas) }
         }.start()
     }
 
     private fun showWeatherBanner(
         current: WeatherService.AreaWeather,
-        clearAreas: List<WeatherService.AreaWeather>
+        allAreas: List<WeatherService.AreaWeather>
     ) {
         val emoji = when {
-            current.code == 0       -> "\u2600"   // ☀
-            current.code in 1..3    -> "\u26c5"   // ⛅
-            current.code in 45..48  -> "\uD83C\uDF2B"  // 🌫
-            current.code in 51..65  -> "\uD83C\uDF27"  // 🌧
-            current.code in 71..77  -> "\u2744"   // ❄
-            current.code >= 95      -> "\u26C8"   // ⛈
-            else                    -> "\u2601"   // ☁
+            current.code == 0       -> "\u2600"          // ☀
+            current.code in 1..3    -> "\u26c5"          // ⛅
+            current.code in 45..48  -> "\uD83C\uDF2B"   // 🌫
+            current.code in 51..65  -> "\uD83C\uDF27"   // 🌧
+            current.code in 71..77  -> "\u2744"          // ❄
+            current.code >= 95      -> "\u26C8"          // ⛈
+            else                    -> "\u2601"          // ☁
         }
-        val windText = if (current.windKmh >= 20) "  \u00B7  ${current.windKmh.toInt()} km/h wind" else ""
+        val windText = if (current.windKmh >= 20)
+            "  \u00B7  ${current.windKmh.toInt()} km/h wind" else ""
         weatherBanner.setBackgroundColor(
             if (current.isPoor) 0xFF37474F.toInt()   // blue-grey: poor conditions
             else                0xFF2E4A1E.toInt()    // dark green: good conditions
@@ -3098,23 +3093,58 @@ class MainActivity : AppCompatActivity() {
         weatherBannerText.text =
             "$emoji ${current.description.replaceFirstChar { it.uppercaseChar() }}$windText"
 
-        if (current.isPoor && clearAreas.isNotEmpty()) {
-            weatherFindBtn.visibility = View.VISIBLE
-            weatherFindBtn.setOnClickListener {
-                val names = clearAreas.map { "\u2600 ${it.areaName}  (${it.description})" }.toTypedArray()
-                AlertDialog.Builder(this)
-                    .setTitle("Clear areas for hillwalking")
-                    .setItems(names) { _, idx ->
-                        weatherBanner.visibility = View.GONE
-                        showHillSearch("${clearAreas[idx].areaName} hills")
-                    }
-                    .setNegativeButton("Close", null)
-                    .show()
-            }
-        } else {
-            weatherFindBtn.visibility = View.GONE
-        }
+        // Always show the UK forecast button
+        val clearAreas = allAreas.filter { it.isGood }
+        weatherFindBtn.visibility = View.VISIBLE
+        weatherFindBtn.text = if (clearAreas.isEmpty()) "UK forecast" else "Good areas today"
+        weatherFindBtn.setOnClickListener { showWeatherAreasDialog(allAreas, clearAreas) }
+
         weatherBanner.visibility = View.VISIBLE
+    }
+
+    private fun showWeatherAreasDialog(
+        allAreas: List<WeatherService.AreaWeather>,
+        clearAreas: List<WeatherService.AreaWeather>
+    ) {
+        if (allAreas.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("UK hill weather")
+                .setMessage("Unable to load weather forecast. Check your connection and try again.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
+        val items = allAreas.map { area ->
+            val cond = when {
+                area.code == 0       -> "\u2600"          // ☀
+                area.code in 1..3    -> "\u26c5"          // ⛅
+                area.code in 45..48  -> "\uD83C\uDF2B"   // 🌫
+                area.code in 51..65  -> "\uD83C\uDF27"   // 🌧
+                area.code in 71..77  -> "\u2744"          // ❄
+                area.code >= 95      -> "\u26C8"          // ⛈
+                else                 -> "\u2601"          // ☁
+            }
+            val wind = if (area.windKmh >= 20) "  ${area.windKmh.toInt()} km/h" else ""
+            "$cond  ${area.areaName}  —  ${area.description}$wind"
+        }.toTypedArray()
+
+        val title = if (clearAreas.isEmpty())
+            "No good conditions across UK hills today"
+        else
+            "${clearAreas.size} area${if (clearAreas.size == 1) "" else "s"} with good conditions"
+
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setItems(items) { _, idx ->
+                val picked = allAreas[idx]
+                if (picked.isGood) {
+                    weatherBanner.visibility = View.GONE
+                    showHillSearch("${picked.areaName} hills")
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     override fun onDestroy() {
