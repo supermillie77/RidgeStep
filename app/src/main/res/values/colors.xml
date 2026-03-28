@@ -10,6 +10,19 @@
     <color name="storm_mist_light">#BFC4C8</color>
     <color name="storm_mist_dark">#8E9499</color>
 
+    <!-- Onboarding -->
+    <color name="ob_background">#EDEBE4</color>
+    <color name="ob_headline">#1A1A1A</color>
+    <color name="ob_subtitle">#6B6B6B</color>
+    <color name="ob_btn_primary">#3D5225</color>
+    <color name="ob_dot_active">#1A1A1A</color>
+    <color name="ob_dot_inactive">#C5C0B8</color>
+    <color name="ob_map_bg">#C5D3A8</color>
+    <color name="ob_card">#FFFFFF</color>
+    <color name="ob_search_bg">#EEEAE3</color>
+    <color name="ob_dark_card">#2E3A48</color>
+    <color name="ob_route_blue">#4A7BBB</color>
+
     <!-- Material-required fallbacks -->
     <color name="colorPrimary">#2E3338</color>
     <color name="colorSecondary">#E87722</color>

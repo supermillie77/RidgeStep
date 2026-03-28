@@ -564,23 +564,6 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(root)
 
-        // ── First-launch welcome ──────────────────────────────────────────────
-        val appPrefs = getSharedPreferences("app_state", MODE_PRIVATE)
-        if (!appPrefs.getBoolean("seen_welcome", false)) {
-            appPrefs.edit().putBoolean("seen_welcome", true).apply()
-            AlertDialog.Builder(this)
-                .setTitle("Welcome to RidgeStep")
-                .setMessage(
-                    "Navigate Scottish hills with confidence.\n\n" +
-                    "1. Tap \uD83D\uDD0D below to search for a Munro, Corbett, or Graham\n" +
-                    "2. Select a car park as your starting point\n" +
-                    "3. Follow the route — pull up the bottom panel for stats\n\n" +
-                    "Tap the map to manually place start and end pins."
-                )
-                .setPositiveButton("Get started", null)
-                .show()
-        }
-
         // ── Load bundled graph on background thread ───────────────────────────
         // Reading 9.2 MB of binary data + parsing 4 GPX routes previously blocked the
         // main thread for 2-4 seconds. Now the UI appears immediately and the loading

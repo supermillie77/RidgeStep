@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Page 4: Navigate with confidence -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/ob_background">
+
+    <!-- Illustration -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="55"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="110dp"
+            android:layout_gravity="bottom"
+            android:src="@drawable/ic_onboard_mountains"
+            android:scaleType="fitXY"
+            android:alpha="0.45"/>
+
+        <!-- Navigation instruction card, tilted -2° -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="260dp"
+            android:layout_height="130dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="24dp"
+            android:rotation="-2"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp"
+            app:cardBackgroundColor="@color/ob_card">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:paddingStart="18dp"
+                android:paddingEnd="18dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="14dp">
+
+                <!-- Direction + instruction -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <!-- Arrow icon -->
+                    <TextView
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:text="↗"
+                        android:textSize="22sp"
+                        android:textColor="#FFFFFF"
+                        android:gravity="center"
+                        android:background="@drawable/bg_onboard_btn_primary"
+                        android:layout_marginEnd="14dp"/>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Bear left onto the ridge path"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/ob_headline"
+                            android:lineSpacingMultiplier="1.2"/>
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="in 200 m"
+                            android:textSize="11sp"
+                            android:textColor="@color/ob_subtitle"
+                            android:layout_marginTop="2dp"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Route progress bar -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="14dp"
+                    android:layout_marginBottom="8dp"
+                    android:background="#EEEAE3"/>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <!-- Progress fill -->
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="6dp"
+                        android:layout_weight="42"
+                        android:background="@color/ob_btn_primary"/>
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="6dp"
+                        android:layout_weight="58"
+                        android:background="#EEEAE3"/>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="4dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="3.5 km done" android:textSize="9sp" android:textColor="@color/ob_subtitle"/>
+                    <android.widget.Space android:layout_width="0dp" android:layout_height="0dp"
+                        android:layout_weight="1"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="4.9 km to go" android:textSize="9sp" android:textColor="@color/ob_subtitle"/>
+                </LinearLayout>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Weather card, tilted +3.5° -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="210dp"
+            android:layout_height="52dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="20dp"
+            android:layout_marginBottom="20dp"
+            android:rotation="3.5"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="5dp"
+            app:cardBackgroundColor="#E8F4E8">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="☀" android:textSize="18sp" android:layout_marginEnd="8dp"/>
+                <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Clear · 12°C"
+                        android:textSize="12sp" android:textStyle="bold" android:textColor="#2A5E2A"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Wind 15 km/h · Good for hiking"
+                        android:textSize="9sp" android:textColor="#4A7A4A"/>
+                </LinearLayout>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+    </FrameLayout>
+
+    <!-- Text -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="45"
+        android:orientation="vertical"
+        android:paddingStart="28dp"
+        android:paddingEnd="28dp"
+        android:paddingTop="28dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Navigate with confidence"
+            android:textSize="30sp"
+            android:textStyle="bold"
+            android:textColor="@color/ob_headline"
+            android:lineSpacingMultiplier="1.1"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Voice-guided turn-by-turn directions and live weather alerts keep you safe on the mountain"
+            android:textSize="15sp"
+            android:textColor="@color/ob_subtitle"
+            android:lineSpacingMultiplier="1.4"/>
+
+    </LinearLayout>
+
+</LinearLayout>

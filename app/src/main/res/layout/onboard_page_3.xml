@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Page 3: Know the terrain -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/ob_background">
+
+    <!-- Illustration -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="55"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <!-- Elevation card (dark), tilted -2° -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="260dp"
+            android:layout_height="160dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="22dp"
+            android:rotation="-2"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp"
+            app:cardBackgroundColor="@color/ob_dark_card">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="14dp"
+                android:paddingBottom="12dp">
+
+                <!-- Header -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Elevation Profile"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFF"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="▲ 1,345 m"
+                        android:textSize="11sp"
+                        android:textColor="@color/nav_orange"/>
+                </LinearLayout>
+
+                <!-- Elevation profile vector -->
+                <ImageView
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:src="@drawable/ic_elevation_profile"
+                    android:scaleType="fitXY"/>
+
+                <!-- Axis labels -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="4dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="0 km" android:textSize="8sp" android:textColor="#8A9AAA"/>
+                    <android.widget.Space android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="8.4 km" android:textSize="8sp" android:textColor="#8A9AAA"/>
+                </LinearLayout>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Difficulty badge, tilted +3° -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="24dp"
+            android:layout_marginBottom="22dp"
+            android:rotation="3"
+            app:cardCornerRadius="22dp"
+            app:cardElevation="5dp"
+            app:cardBackgroundColor="#FFF3E0">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="🟠" android:textSize="14sp" android:layout_marginEnd="6dp"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Strenuous hillwalk"
+                    android:textSize="12sp" android:textStyle="bold" android:textColor="#BF5800"/>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Stats strip, tilted -1° -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="240dp"
+            android:layout_height="44dp"
+            android:layout_gravity="bottom|start"
+            android:layout_marginStart="20dp"
+            android:layout_marginBottom="16dp"
+            android:rotation="-1"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="@color/ob_card">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center">
+
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:orientation="vertical" android:gravity="center_horizontal">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="850 m" android:textSize="12sp" android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="↑ Uphill" android:textSize="8sp" android:textColor="@color/ob_subtitle"/>
+                </LinearLayout>
+
+                <View android:layout_width="1dp" android:layout_height="24dp" android:background="#EEEAE3"/>
+
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:orientation="vertical" android:gravity="center_horizontal">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="850 m" android:textSize="12sp" android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="↓ Downhill" android:textSize="8sp" android:textColor="@color/ob_subtitle"/>
+                </LinearLayout>
+
+                <View android:layout_width="1dp" android:layout_height="24dp" android:background="#EEEAE3"/>
+
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:orientation="vertical" android:gravity="center_horizontal">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="p95 30°" android:textSize="12sp" android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Max slope" android:textSize="8sp" android:textColor="@color/ob_subtitle"/>
+                </LinearLayout>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+    </FrameLayout>
+
+    <!-- Text -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="45"
+        android:orientation="vertical"
+        android:paddingStart="28dp"
+        android:paddingEnd="28dp"
+        android:paddingTop="28dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Know the terrain"
+            android:textSize="30sp"
+            android:textStyle="bold"
+            android:textColor="@color/ob_headline"
+            android:lineSpacingMultiplier="1.1"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Elevation gain, gradient grading and a safety rating before you take a single step"
+            android:textSize="15sp"
+            android:textColor="@color/ob_subtitle"
+            android:lineSpacingMultiplier="1.4"/>
+
+    </LinearLayout>
+
+</LinearLayout>
