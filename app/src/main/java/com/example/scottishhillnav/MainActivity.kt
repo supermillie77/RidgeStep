@@ -55,6 +55,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.MapTileIndex
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -192,11 +193,17 @@ class MainActivity : AppCompatActivity() {
         override fun onLocationResult(result: LocationResult) {
             val loc = result.lastLocation ?: return
             lastLocation = loc
-            // On the very first GPS fix: pan the map to the user's location and check weather
+            // On the very first GPS fix: zoom map to 5-mile radius around user and check weather
             if (!hasAnimatedToUser) {
                 hasAnimatedToUser = true
-                map.controller.setCenter(GeoPoint(loc.latitude, loc.longitude))
-                map.controller.setZoom(10.0)
+                val radiusM = 8047.2   // 5 miles in metres
+                val latDelta = radiusM / 111320.0
+                val lonDelta = radiusM / (111320.0 * Math.cos(Math.toRadians(loc.latitude)))
+                val bbox = BoundingBox(
+                    loc.latitude  + latDelta, loc.longitude + lonDelta,
+                    loc.latitude  - latDelta, loc.longitude - lonDelta
+                )
+                map.post { map.zoomToBoundingBox(bbox, true) }
                 if (!hasCheckedWeather) {
                     hasCheckedWeather = true
                     checkWeatherForLocation(loc.latitude, loc.longitude)
@@ -646,14 +653,36 @@ class MainActivity : AppCompatActivity() {
 
     private fun requestLocationPermission() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED) {
+            == PackageManager.PERMISSION_GRANTED) {
+            startLocationUpdates()
+            return
+        }
+        if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION)) {
+            // User previously denied — explain why before asking again
+            AlertDialog.Builder(this)
+                .setTitle("Location access needed")
+                .setMessage(
+                    "RidgeStep uses your location to:\n\n" +
+                    "• Show where you are on the map\n" +
+                    "• Check local weather conditions\n" +
+                    "• Give turn-by-turn walking directions\n\n" +
+                    "Your location is never shared or stored."
+                )
+                .setPositiveButton("Allow location") { _, _ ->
+                    ActivityCompat.requestPermissions(
+                        this,
+                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                        LOCATION_PERMISSION_REQUEST
+                    )
+                }
+                .setNegativeButton("Not now", null)
+                .show()
+        } else {
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
                 LOCATION_PERMISSION_REQUEST
             )
-        } else {
-            startLocationUpdates()
         }
     }
 
