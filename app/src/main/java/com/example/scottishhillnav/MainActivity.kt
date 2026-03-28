@@ -50,6 +50,7 @@ import com.example.scottishhillnav.ui.RouteGradientOverlay
 import com.example.scottishhillnav.ui.SummitOverlay
 import com.google.android.gms.location.*
 import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
@@ -113,7 +114,7 @@ class MainActivity : AppCompatActivity() {
     // Voice navigation
     private lateinit var voiceNavigator: VoiceNavigator
     private lateinit var instructionGenerator: InstructionGenerator
-    private lateinit var voiceFab: FloatingActionButton
+    private lateinit var voiceFab: ExtendedFloatingActionButton
 
     // Off-track detection
     private var offTrackCount         = 0          // consecutive GPS fixes showing off-route
@@ -260,11 +261,22 @@ class MainActivity : AppCompatActivity() {
         map.overlays.add(routeOverlay)
         map.overlays.add(SummitOverlay(resources.displayMetrics.density))
 
+        // ── SharedPreferences: track first-use of each button ────────────────
+        val btnPrefs = getSharedPreferences("button_state", MODE_PRIVATE)
+
         // ── Stats FAB ────────────────────────────────────────────────────────
-        val fab = FloatingActionButton(this).apply {
-            setImageResource(android.R.drawable.ic_menu_info_details)
+        val fab = ExtendedFloatingActionButton(this).apply {
+            setIconResource(android.R.drawable.ic_menu_info_details)
+            setText("Stats & info")
             contentDescription = "Navigation stats"
-            setOnClickListener { showStatsPopup() }
+            if (btnPrefs.getBoolean("used_info", false)) isExtended = false
+            setOnClickListener {
+                if (!btnPrefs.getBoolean("used_info", false)) {
+                    btnPrefs.edit().putBoolean("used_info", true).apply()
+                    shrink()
+                }
+                showStatsPopup()
+            }
         }
         val fabParams = CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
@@ -278,10 +290,18 @@ class MainActivity : AppCompatActivity() {
         root.addView(fab, fabParams)
 
         // ── Voice mute FAB (above the info FAB) ──────────────────────────────
-        voiceFab = FloatingActionButton(this).apply {
-            setImageResource(android.R.drawable.ic_lock_silent_mode_off)
+        voiceFab = ExtendedFloatingActionButton(this).apply {
+            setIconResource(android.R.drawable.ic_lock_silent_mode_off)
+            setText("Voice guide")
             contentDescription = "Mute voice navigation"
-            setOnClickListener { toggleVoiceMute() }
+            if (btnPrefs.getBoolean("used_voice", false)) isExtended = false
+            setOnClickListener {
+                if (!btnPrefs.getBoolean("used_voice", false)) {
+                    btnPrefs.edit().putBoolean("used_voice", true).apply()
+                    shrink()
+                }
+                toggleVoiceMute()
+            }
         }
         val voiceFabParams = CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
@@ -296,10 +316,18 @@ class MainActivity : AppCompatActivity() {
         root.addView(voiceFab, voiceFabParams)
 
         // ── Select Hill FAB (bottom-right, above voice FAB) ──────────────────
-        val hillFab = FloatingActionButton(this).apply {
-            setImageResource(android.R.drawable.ic_menu_search)
+        val hillFab = ExtendedFloatingActionButton(this).apply {
+            setIconResource(android.R.drawable.ic_menu_search)
+            setText("Find a hill")
             contentDescription = "Find a hill"
-            setOnClickListener { showHillSearch() }
+            if (btnPrefs.getBoolean("used_find", false)) isExtended = false
+            setOnClickListener {
+                if (!btnPrefs.getBoolean("used_find", false)) {
+                    btnPrefs.edit().putBoolean("used_find", true).apply()
+                    shrink()
+                }
+                showHillSearch()
+            }
         }
         val hillFabParams = CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
@@ -2711,7 +2739,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun toggleVoiceMute() {
         voiceNavigator.muted = !voiceNavigator.muted
-        voiceFab.setImageResource(
+        voiceFab.setIconResource(
             if (voiceNavigator.muted)
                 android.R.drawable.ic_lock_silent_mode        // muted
             else

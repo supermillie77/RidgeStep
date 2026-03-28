@@ -18,7 +18,8 @@ class OnboardingActivity : AppCompatActivity() {
         R.layout.onboard_page_categories,
         R.layout.onboard_page_2,
         R.layout.onboard_page_3,
-        R.layout.onboard_page_4
+        R.layout.onboard_page_4,
+        R.layout.onboard_page_map_tour
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {

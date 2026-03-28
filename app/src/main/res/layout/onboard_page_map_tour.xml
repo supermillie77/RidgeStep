@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Page 6: Your navigation tools — mock main screen with labelled FABs -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/ob_background">
+
+    <!-- Illustration: mock main app screen -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="55"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="110dp"
+            android:layout_gravity="bottom"
+            android:src="@drawable/ic_onboard_mountains"
+            android:scaleType="fitXY"
+            android:alpha="0.4"/>
+
+        <!-- Main mock screen card, tilted -1.5° -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="280dp"
+            android:layout_height="218dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="12dp"
+            android:rotation="-1.5"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp"
+            app:cardBackgroundColor="@color/ob_map_bg">
+
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <!-- Summit markers scattered on the map -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="▲"
+                    android:textColor="#FF6D00"
+                    android:textSize="16sp"
+                    android:layout_marginTop="22dp"
+                    android:layout_marginStart="18dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="▲"
+                    android:textColor="#E53935"
+                    android:textSize="12sp"
+                    android:layout_marginTop="15dp"
+                    android:layout_marginStart="90dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="▲"
+                    android:textColor="#1E88E5"
+                    android:textSize="10sp"
+                    android:layout_marginTop="52dp"
+                    android:layout_marginStart="52dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="▲"
+                    android:textColor="#43A047"
+                    android:textSize="10sp"
+                    android:layout_marginTop="44dp"
+                    android:layout_marginStart="140dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="▲"
+                    android:textColor="#AB47BC"
+                    android:textSize="9sp"
+                    android:layout_marginTop="68dp"
+                    android:layout_marginStart="30dp"/>
+
+                <!-- FAB stack: aligned bottom-end, above bottom sheet -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentEnd="true"
+                    android:layout_alignParentBottom="true"
+                    android:layout_marginEnd="8dp"
+                    android:layout_marginBottom="46dp"
+                    android:orientation="vertical"
+                    android:gravity="end">
+
+                    <!-- Find a hill FAB pill -->
+                    <androidx.cardview.widget.CardView
+                        android:layout_width="wrap_content"
+                        android:layout_height="24dp"
+                        app:cardCornerRadius="12dp"
+                        app:cardElevation="3dp"
+                        app:cardBackgroundColor="@color/ob_btn_primary">
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingStart="7dp"
+                            android:paddingEnd="9dp">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="&#128269;"
+                                android:textSize="9sp"/>
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text=" Find a hill"
+                                android:textSize="9sp"
+                                android:textStyle="bold"
+                                android:textColor="#FFFFFF"/>
+                        </LinearLayout>
+                    </androidx.cardview.widget.CardView>
+
+                    <View android:layout_width="match_parent" android:layout_height="5dp"/>
+
+                    <!-- Voice guide FAB pill -->
+                    <androidx.cardview.widget.CardView
+                        android:layout_width="wrap_content"
+                        android:layout_height="24dp"
+                        app:cardCornerRadius="12dp"
+                        app:cardElevation="3dp"
+                        app:cardBackgroundColor="@color/ob_btn_primary">
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingStart="7dp"
+                            android:paddingEnd="9dp">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="&#128266;"
+                                android:textSize="9sp"/>
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text=" Voice guide"
+                                android:textSize="9sp"
+                                android:textStyle="bold"
+                                android:textColor="#FFFFFF"/>
+                        </LinearLayout>
+                    </androidx.cardview.widget.CardView>
+
+                    <View android:layout_width="match_parent" android:layout_height="5dp"/>
+
+                    <!-- Stats & info FAB pill -->
+                    <androidx.cardview.widget.CardView
+                        android:layout_width="wrap_content"
+                        android:layout_height="24dp"
+                        app:cardCornerRadius="12dp"
+                        app:cardElevation="3dp"
+                        app:cardBackgroundColor="@color/ob_btn_primary">
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="match_parent"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingStart="7dp"
+                            android:paddingEnd="9dp">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="&#8505;"
+                                android:textSize="9sp"
+                                android:textColor="#FFFFFF"/>
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text=" Stats &amp; info"
+                                android:textSize="9sp"
+                                android:textStyle="bold"
+                                android:textColor="#FFFFFF"/>
+                        </LinearLayout>
+                    </androidx.cardview.widget.CardView>
+
+                </LinearLayout>
+
+                <!-- Bottom sheet peek -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_alignParentBottom="true"
+                    android:background="#F0EBE0"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="10dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="▲ "
+                        android:textColor="#FF6D00"
+                        android:textSize="11sp"/>
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Ben Nevis"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:textColor="#1A1A1A"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="8.4 km  ↑ 1,345 m"
+                        android:textSize="9sp"
+                        android:textColor="@color/ob_btn_primary"/>
+                </LinearLayout>
+
+            </RelativeLayout>
+        </androidx.cardview.widget.CardView>
+
+    </FrameLayout>
+
+    <!-- Text -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="45"
+        android:orientation="vertical"
+        android:paddingStart="28dp"
+        android:paddingEnd="28dp"
+        android:paddingTop="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Your navigation tools"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:textColor="@color/ob_headline"
+            android:lineSpacingMultiplier="1.1"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Three buttons in the corner — they expand on first use, then tuck away neatly"
+            android:textSize="14sp"
+            android:textColor="@color/ob_subtitle"
+            android:lineSpacingMultiplier="1.3"/>
+
+        <!-- Button guide bullets -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="14dp"
+            android:gravity="center_vertical">
+            <TextView android:layout_width="24dp" android:layout_height="wrap_content"
+                android:text="&#128269;" android:textSize="14sp"/>
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="6dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Find a hill" android:textSize="12sp" android:textStyle="bold"
+                    android:textColor="@color/ob_headline"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Search summits and plot a real footpath route"
+                    android:textSize="11sp" android:textColor="@color/ob_subtitle"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical">
+            <TextView android:layout_width="24dp" android:layout_height="wrap_content"
+                android:text="&#128266;" android:textSize="14sp"/>
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="6dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Voice guide" android:textSize="12sp" android:textStyle="bold"
+                    android:textColor="@color/ob_headline"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Turn-by-turn audio — tap to mute"
+                    android:textSize="11sp" android:textColor="@color/ob_subtitle"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical">
+            <TextView android:layout_width="24dp" android:layout_height="wrap_content"
+                android:text="&#8505;" android:textSize="14sp"
+                android:textColor="@color/ob_headline"/>
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="6dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Stats &amp; info" android:textSize="12sp" android:textStyle="bold"
+                    android:textColor="@color/ob_headline"/>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Distance, ascent and difficulty grade"
+                    android:textSize="11sp" android:textColor="@color/ob_subtitle"/>
+            </LinearLayout>
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>
