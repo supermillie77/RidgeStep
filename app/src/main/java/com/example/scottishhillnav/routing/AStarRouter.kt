@@ -2,7 +2,8 @@
 package com.example.scottishhillnav.routing
 
 import java.util.PriorityQueue
-import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sqrt
 
 class AStarRouter(private val graph: Graph) : ConstrainedRouter {
 
@@ -50,7 +51,10 @@ class AStarRouter(private val graph: Graph) : ConstrainedRouter {
         allowedMask: Int,
         blockedNodes: Set<Int>,
         blockedEdges: Set<Pair<Int, Int>>,
-        costModel: EdgeCostModel = ClassicCostModel
+        costModel: EdgeCostModel = ClassicCostModel,
+        // Safety cap: abandon search after this many node expansions to prevent
+        // multi-second hangs on disconnected or very large graphs.
+        maxExpansions: Int = 400_000
     ): ConstrainedRouter.Result? {
 
         if (!graph.nodes.containsKey(startId) || !graph.nodes.containsKey(endId)) return null
@@ -69,12 +73,18 @@ class AStarRouter(private val graph: Graph) : ConstrainedRouter {
         )
         bestG[startId] = 0.0
 
+        var expansions = 0
         while (open.isNotEmpty()) {
+            if (++expansions > maxExpansions) return null   // prevent runaway on large graphs
+
             val current: QNode = open.remove()
 
             if (current.nodeId == endId) {
                 return reconstruct(current)
             }
+
+            // Skip stale entries (node was re-opened with a better g later)
+            if (current.g > (bestG[current.nodeId] ?: Double.MAX_VALUE)) continue
 
             val outEdges = graph.edges[current.nodeId] ?: continue
 
@@ -128,11 +138,20 @@ class AStarRouter(private val graph: Graph) : ConstrainedRouter {
         return ConstrainedRouter.Result(path, end.g)
     }
 
+    /**
+     * Admissible heuristic: straight-line distance in metres between nodes [a] and [b].
+     *
+     * Previously used raw degree differences, which are ~111,000× too small compared to
+     * the metre-based edge costs — causing A* to explore almost every reachable node
+     * (essentially Dijkstra). Converting to metres makes the heuristic tight, so A*
+     * follows the correct corridor and expands far fewer nodes.
+     */
     private fun heuristic(a: Int, b: Int): Double {
         val na = graph.nodes[a] ?: return 0.0
         val nb = graph.nodes[b] ?: return 0.0
-        val dLat = na.lat - nb.lat
-        val dLon = na.lon - nb.lon
-        return kotlin.math.sqrt(dLat * dLat + dLon * dLon)
+        val midLat = Math.toRadians((na.lat + nb.lat) / 2.0)
+        val dLat = (na.lat - nb.lat) * 111_000.0
+        val dLon = (na.lon - nb.lon) * 111_000.0 * cos(midLat)
+        return sqrt(dLat * dLat + dLon * dLon)
     }
 }

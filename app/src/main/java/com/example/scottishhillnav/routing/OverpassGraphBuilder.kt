@@ -12,38 +12,55 @@ import org.json.JSONObject
  */
 object OverpassGraphBuilder {
 
+    private val OVERPASS_ENDPOINTS = listOf(
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter"
+    )
+
     /**
      * Fetches ways tagged as footway/path/track/bridleway within [radiusMeters] of the centre
      * and builds a bidirectional routing Graph suitable for A* routing.
-     * Returns null if the network call fails or no usable data is returned.
+     * Tries the primary Overpass server then a mirror. Returns null if all fail.
      */
     fun buildForArea(centerLat: Double, centerLon: Double, radiusMeters: Int = 12_000): Graph? {
-        val query = "[out:json][timeout:45];" +
+        // 20-second server-side timeout matches our HTTP read timeout — fail fast rather than
+        // making the user wait 45 seconds only to see no route appear.
+        val query = "[out:json][timeout:20];" +
             "(way[\"highway\"~\"^(footway|path|track|bridleway|steps|unclassified|service|residential|tertiary|living_street|pedestrian)$\"]" +
             "(around:$radiusMeters,$centerLat,$centerLon););" +
             "(._;>;);out;"
         val encoded = URLEncoder.encode(query, "UTF-8")
-        val url = URL("https://overpass-api.de/api/interpreter?data=$encoded")
-        val conn = url.openConnection() as HttpURLConnection
-        conn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
-        conn.connectTimeout = 45_000
-        conn.readTimeout   = 45_000
 
-        val response = try {
-            val code = conn.responseCode
-            if (code != 200) {
-                val body = conn.errorStream?.bufferedReader()?.readText()?.take(200) ?: ""
-                throw RuntimeException("HTTP $code: $body")
+        for (endpoint in OVERPASS_ENDPOINTS) {
+            val conn = try {
+                URL("$endpoint?data=$encoded").openConnection() as HttpURLConnection
+            } catch (_: Exception) { continue }
+            conn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
+            conn.connectTimeout = 20_000
+            conn.readTimeout   = 20_000
+
+            val text = try {
+                val code = conn.responseCode
+                if (code != 200) {
+                    conn.errorStream?.bufferedReader()?.readText()
+                    null
+                } else {
+                    conn.inputStream.bufferedReader().readText()
+                }
+            } catch (_: Exception) { null }
+            finally { conn.disconnect() }
+
+            if (text != null) {
+                val graph = try { parseResponse(text) } catch (_: Exception) { null }
+                if (graph != null) return graph
             }
-            conn.inputStream.bufferedReader().readText()
-        } finally {
-            conn.disconnect()
         }
+        return null
+    }
 
+    private fun parseResponse(response: String): Graph? {
         val root = JSONObject(response)
-        val remark = root.optString("remark", "")
-        val elements = root.optJSONArray("elements")
-            ?: throw RuntimeException("No elements in response. remark=$remark")
+        val elements = root.optJSONArray("elements") ?: return null
 
         // First pass: collect OSM node coordinates and way node-ID sequences
         val osmNodes = HashMap<Long, Node>()

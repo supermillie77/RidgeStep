@@ -284,6 +284,9 @@ object HillSearchService {
      * with no road connection. The only reliable walk-start indicators are:
      *  1. amenity=parking nodes/ways — actual car parks
      *  2. route=ferry relations — authoritative ferry pairs via from/to tags
+     *
+     * All three Overpass queries run in parallel (previously sequential: up to 150 s worst
+     * case). Total wait is now max(q1, q2, q3) ≈ 20 s, not their sum.
      */
     fun findNearbyCarParks(lat: Double, lon: Double): List<CarPark> {
         val cacheKey = "%.4f,%.4f".format(lat, lon)
@@ -294,27 +297,29 @@ object HillSearchService {
             return words.any { it in naturalFeatureWords }
         }
 
-        val carParks       = mutableListOf<CarPark>()
-        // Settlements collected only for ferry from/to name resolution — NOT for output.
-        val settlements    = mutableListOf<CarPark>()
-        val ferryTerms     = mutableListOf<CarPark>()
-        val ferryRouteNames= mutableListOf<Pair<String, String>>()
+        // Return type for the ferry/settlements query
+        class Q2Result(
+            val settlements: List<CarPark>,
+            val ferryTerms: List<CarPark>,
+            val ferryRouteNames: List<Pair<String, String>>
+        )
 
-        // ── Query 1: car parks within 30 km ──────────────────────────────────
-        // 30 km catches remote road-end car parks (e.g. Kinlochhourn, ~23 km from
-        // Ladhar Bheinn) that a smaller radius would miss.
-        // overpassGet() tries the primary server then a mirror, so a single rate-limit
-        // or temporary outage on overpass-api.de doesn't wipe the car park list.
-        try {
-            val q = URLEncoder.encode(
-                "[out:json][timeout:45];" +
-                    "(node[\"amenity\"=\"parking\"](around:30000,$lat,$lon);" +
-                    "way[\"amenity\"=\"parking\"](around:30000,$lat,$lon););" +
-                    "out center tags;",
-                "UTF-8"
-            )
-            val elements = overpassGet(q)?.getJSONArray("elements")
-            if (elements != null) {
+        // ── Launch all 3 Overpass queries in parallel ─────────────────────────
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(3)
+
+        // Query 1: car parks within 30 km
+        val futureParking = executor.submit<List<CarPark>> {
+            try {
+                val q = URLEncoder.encode(
+                    "[out:json][timeout:20];" +
+                        "(node[\"amenity\"=\"parking\"](around:30000,$lat,$lon);" +
+                        "way[\"amenity\"=\"parking\"](around:30000,$lat,$lon););" +
+                        "out center tags;",
+                    "UTF-8"
+                )
+                val elements = overpassGet(q, 20_000, 20_000)?.getJSONArray("elements")
+                    ?: return@submit emptyList()
+                val result = mutableListOf<CarPark>()
                 for (i in 0 until elements.length()) {
                     val el   = elements.getJSONObject(i)
                     val tags = el.optJSONObject("tags")
@@ -324,122 +329,139 @@ object HillSearchService {
                                else el.optDouble("lon", 0.0)
                     if (eLat == 0.0 && eLon == 0.0) continue
                     val name = tags?.optString("name", "").orEmpty()
-                    carParks.add(CarPark(name.ifEmpty { "Car park" }, eLat, eLon))
+                    result.add(CarPark(name.ifEmpty { "Car park" }, eLat, eLon))
                 }
-            }
-        } catch (e: Exception) { /* continue */ }
+                result
+            } catch (_: Exception) { emptyList() }
+        }
 
-        // ── Query 2: ferry routes + terminals + nearby settlements ────────────
-        // Ferry route relations are included in the output so their from/to tags can be
-        // read directly — the authoritative source for the ferry pair regardless of how
-        // individual terminal nodes happen to be tagged.
-        // Settlements are fetched only to supply coordinates when resolving from/to names.
-        try {
-            val q = URLEncoder.encode(
-                "[out:json][timeout:60];" +
-                    "relation[\"route\"=\"ferry\"](around:35000,$lat,$lon)->.fr;" +
-                    "(.fr;" +
-                    "node[\"place\"~\"$PLACE_REGEX\"](around:30000,$lat,$lon);" +
-                    "way[\"place\"~\"$PLACE_REGEX\"](around:30000,$lat,$lon);" +
-                    "node[\"amenity\"=\"ferry_terminal\"](around:35000,$lat,$lon);" +
-                    "node[\"man_made\"~\"^(pier|jetty)$\"][\"name\"](around:35000,$lat,$lon);" +
-                    "node[\"ferry\"=\"yes\"][\"name\"](around:35000,$lat,$lon);" +
-                    "node(r.fr)[\"name\"];" +
-                    ");" +
-                    "out center tags;",
-                "UTF-8"
-            )
-            val elements = overpassGet(q, connectMs = 60_000, readMs = 60_000)
-                ?.getJSONArray("elements")
-            if (elements == null) throw Exception("no elements")
-            for (i in 0 until elements.length()) {
-                val el   = elements.getJSONObject(i)
-                val tags = el.optJSONObject("tags")
-                if (el.optString("type") == "relation") {
-                    // Try from/to tags first, then parse the name "Mallaig – Inverie"
-                    val from = tags?.optString("from", "").orEmpty().trim()
-                    val to   = tags?.optString("to",   "").orEmpty().trim()
-                    if (from.isNotEmpty() && to.isNotEmpty()) {
-                        ferryRouteNames.add(from to to)
-                    } else {
-                        val rName = tags?.optString("name", "").orEmpty().trim()
-                        val parts = rName.split(Regex("\\s*[–—-]\\s*|\\bto\\b"), limit = 2)
-                        if (parts.size == 2) {
-                            val p0 = parts[0].trim(); val p1 = parts[1].trim()
-                            if (p0.isNotEmpty() && p1.isNotEmpty()) ferryRouteNames.add(p0 to p1)
+        // Query 2: ferry routes + terminals + nearby settlements
+        val futureFerry = executor.submit<Q2Result> {
+            val settlements     = mutableListOf<CarPark>()
+            val ferryTerms      = mutableListOf<CarPark>()
+            val ferryRouteNames = mutableListOf<Pair<String, String>>()
+            try {
+                val q = URLEncoder.encode(
+                    "[out:json][timeout:20];" +
+                        "relation[\"route\"=\"ferry\"](around:35000,$lat,$lon)->.fr;" +
+                        "(.fr;" +
+                        "node[\"place\"~\"$PLACE_REGEX\"](around:30000,$lat,$lon);" +
+                        "way[\"place\"~\"$PLACE_REGEX\"](around:30000,$lat,$lon);" +
+                        "node[\"amenity\"=\"ferry_terminal\"](around:35000,$lat,$lon);" +
+                        "node[\"man_made\"~\"^(pier|jetty)$\"][\"name\"](around:35000,$lat,$lon);" +
+                        "node[\"ferry\"=\"yes\"][\"name\"](around:35000,$lat,$lon);" +
+                        "node(r.fr)[\"name\"];" +
+                        ");" +
+                        "out center tags;",
+                    "UTF-8"
+                )
+                val elements = overpassGet(q, 20_000, 20_000)?.getJSONArray("elements")
+                if (elements != null) {
+                    for (i in 0 until elements.length()) {
+                        val el   = elements.getJSONObject(i)
+                        val tags = el.optJSONObject("tags")
+                        if (el.optString("type") == "relation") {
+                            val from = tags?.optString("from", "").orEmpty().trim()
+                            val to   = tags?.optString("to",   "").orEmpty().trim()
+                            if (from.isNotEmpty() && to.isNotEmpty()) {
+                                ferryRouteNames.add(from to to)
+                            } else {
+                                val rName = tags?.optString("name", "").orEmpty().trim()
+                                val parts = rName.split(Regex("\\s*[–—-]\\s*|\\bto\\b"), limit = 2)
+                                if (parts.size == 2) {
+                                    val p0 = parts[0].trim(); val p1 = parts[1].trim()
+                                    if (p0.isNotEmpty() && p1.isNotEmpty()) ferryRouteNames.add(p0 to p1)
+                                }
+                            }
+                            continue
                         }
-                    }
-                    continue
-                }
-                val eLat = if (el.has("center")) el.getJSONObject("center").getDouble("lat")
-                           else el.optDouble("lat", 0.0)
-                val eLon = if (el.has("center")) el.getJSONObject("center").getDouble("lon")
-                           else el.optDouble("lon", 0.0)
-                if (eLat == 0.0 && eLon == 0.0) continue
-                val amenity     = tags?.optString("amenity",          "").orEmpty()
-                val manMade     = tags?.optString("man_made",         "").orEmpty()
-                val ferry       = tags?.optString("ferry",            "").orEmpty()
-                val pubTransport= tags?.optString("public_transport", "").orEmpty()
-                val place       = tags?.optString("place",            "").orEmpty()
-                val name        = tags?.optString("name",             "").orEmpty()
-                when {
-                    (amenity == "ferry_terminal" || manMade == "pier" || manMade == "jetty"
-                            || ferry == "yes" || pubTransport == "stop_position") && name.isNotEmpty() ->
-                        ferryTerms.add(CarPark(name, eLat, eLon))
-                    place.isNotEmpty() && name.isNotEmpty() && !isNaturalFeature(name) ->
-                        settlements.add(CarPark(name, eLat, eLon))
-                    place.isEmpty() && amenity.isEmpty() && manMade.isEmpty()
-                            && ferry.isEmpty() && name.isNotEmpty() && !isNaturalFeature(name) ->
-                        ferryTerms.add(CarPark(name, eLat, eLon))
-                }
-            }
-        } catch (e: Exception) { /* continue */ }
-
-        // ── Query 3: water polygons for cross-water barrier detection ─────────
-        // Fetch natural=water polygons so we can exclude car parks whose midpoint
-        // to the summit crosses a water body (e.g. wrong side of a loch).
-        // Both ways AND relations are queried: large Scottish lochs (Loch Ness,
-        // Loch Tay, Loch Earn, Loch Katrine, etc.) are multipolygon relations in
-        // OSM and would be missed if only ways were fetched.
-        val waterPolygons = mutableListOf<List<Pair<Double, Double>>>()
-        try {
-            val q = URLEncoder.encode(
-                "[out:json][timeout:45];" +
-                    "(way[\"natural\"=\"water\"](around:25000,$lat,$lon);" +
-                    "relation[\"natural\"=\"water\"](around:25000,$lat,$lon););" +
-                    "out geom;",
-                "UTF-8"
-            )
-            val elements = overpassGet(q)?.getJSONArray("elements") ?: throw Exception("no elements")
-
-            fun addGeometry(geometry: org.json.JSONArray) {
-                if (geometry.length() < 3) return
-                val polygon = (0 until geometry.length()).map { j ->
-                    val pt = geometry.getJSONObject(j)
-                    pt.getDouble("lat") to pt.getDouble("lon")
-                }
-                waterPolygons.add(polygon)
-            }
-
-            for (i in 0 until elements.length()) {
-                val el = elements.getJSONObject(i)
-                when (el.optString("type")) {
-                    "way" -> {
-                        // Simple water polygon — geometry array directly on element
-                        el.optJSONArray("geometry")?.let { addGeometry(it) }
-                    }
-                    "relation" -> {
-                        // Multipolygon relation — geometry is on each outer member way
-                        val members = el.optJSONArray("members") ?: continue
-                        for (m in 0 until members.length()) {
-                            val member = members.getJSONObject(m)
-                            if (member.optString("role") != "outer") continue
-                            member.optJSONArray("geometry")?.let { addGeometry(it) }
+                        val eLat = if (el.has("center")) el.getJSONObject("center").getDouble("lat")
+                                   else el.optDouble("lat", 0.0)
+                        val eLon = if (el.has("center")) el.getJSONObject("center").getDouble("lon")
+                                   else el.optDouble("lon", 0.0)
+                        if (eLat == 0.0 && eLon == 0.0) continue
+                        val amenity      = tags?.optString("amenity",          "").orEmpty()
+                        val manMade      = tags?.optString("man_made",         "").orEmpty()
+                        val ferry        = tags?.optString("ferry",            "").orEmpty()
+                        val pubTransport = tags?.optString("public_transport", "").orEmpty()
+                        val place        = tags?.optString("place",            "").orEmpty()
+                        val name         = tags?.optString("name",             "").orEmpty()
+                        when {
+                            (amenity == "ferry_terminal" || manMade == "pier" || manMade == "jetty"
+                                    || ferry == "yes" || pubTransport == "stop_position") && name.isNotEmpty() ->
+                                ferryTerms.add(CarPark(name, eLat, eLon))
+                            place.isNotEmpty() && name.isNotEmpty() && !isNaturalFeature(name) ->
+                                settlements.add(CarPark(name, eLat, eLon))
+                            place.isEmpty() && amenity.isEmpty() && manMade.isEmpty()
+                                    && ferry.isEmpty() && name.isNotEmpty() && !isNaturalFeature(name) ->
+                                ferryTerms.add(CarPark(name, eLat, eLon))
                         }
                     }
                 }
-            }
-        } catch (e: Exception) { /* continue without water filtering */ }
+            } catch (_: Exception) { /* continue */ }
+            Q2Result(settlements, ferryTerms, ferryRouteNames)
+        }
+
+        // Query 3: water polygons for cross-water barrier detection
+        val futureWater = executor.submit<List<List<Pair<Double, Double>>>> {
+            val waterPolygons = mutableListOf<List<Pair<Double, Double>>>()
+            try {
+                val q = URLEncoder.encode(
+                    "[out:json][timeout:20];" +
+                        "(way[\"natural\"=\"water\"](around:25000,$lat,$lon);" +
+                        "relation[\"natural\"=\"water\"](around:25000,$lat,$lon););" +
+                        "out geom;",
+                    "UTF-8"
+                )
+                val elements = overpassGet(q, 20_000, 20_000)?.getJSONArray("elements")
+                    ?: return@submit emptyList()
+
+                fun addGeometry(geometry: org.json.JSONArray) {
+                    if (geometry.length() < 3) return
+                    val polygon = (0 until geometry.length()).map { j ->
+                        val pt = geometry.getJSONObject(j)
+                        pt.getDouble("lat") to pt.getDouble("lon")
+                    }
+                    waterPolygons.add(polygon)
+                }
+
+                for (i in 0 until elements.length()) {
+                    val el = elements.getJSONObject(i)
+                    when (el.optString("type")) {
+                        "way"      -> el.optJSONArray("geometry")?.let { addGeometry(it) }
+                        "relation" -> {
+                            val members = el.optJSONArray("members") ?: continue
+                            for (m in 0 until members.length()) {
+                                val member = members.getJSONObject(m)
+                                if (member.optString("role") != "outer") continue
+                                member.optJSONArray("geometry")?.let { addGeometry(it) }
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) { /* continue without water filtering */ }
+            waterPolygons
+        }
+
+        executor.shutdown()
+
+        // Collect results — 25-second deadline per query (20 s server + 5 s network buffer).
+        // If a query times out its result is treated as empty; the others still contribute.
+        val carParks = try {
+            futureParking.get(25, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (_: Exception) { emptyList() }.toMutableList()
+
+        val q2 = try {
+            futureFerry.get(25, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (_: Exception) { Q2Result(emptyList(), emptyList(), emptyList()) }
+
+        val waterPolygons = try {
+            futureWater.get(25, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (_: Exception) { emptyList<List<Pair<Double, Double>>>() }
+
+        val settlements     = q2.settlements
+        val ferryTerms      = q2.ferryTerms
+        val ferryRouteNames = q2.ferryRouteNames
 
         // ── Build ferry pairs ─────────────────────────────────────────────────
         val ferryAccess = mutableListOf<CarPark>()

@@ -72,6 +72,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var router: AStarRouter
     private lateinit var metricsCalculator: RouteMetricsCalculator
     private lateinit var candidateGenerator: RouteCandidateGenerator
+    /** Set to true once the bundled graph and all routing objects are initialised on the background thread. */
+    @Volatile private var graphReady = false
 
     // Ordered tap points: [start, (waypoint1, waypoint2, ...,) destination]
     private val tapPoints   = mutableListOf<GeoPoint>()
@@ -201,15 +203,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         DemProvider.init(this)
-        graph = GraphStore.load(this)
-        bundledGraph = graph   // keep permanent reference — never reassigned
-        bundledRouter = AStarRouter(bundledGraph)   // never replaced
-        router = AStarRouter(graph)
-        metricsCalculator = RouteMetricsCalculator(graph)
-        candidateGenerator = RouteCandidateGenerator(graph, router, metricsCalculator)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         voiceNavigator = VoiceNavigator(this)
-        instructionGenerator = InstructionGenerator(graph)
 
         val root = CoordinatorLayout(this).apply {
             layoutParams = CoordinatorLayout.LayoutParams(
@@ -510,6 +505,27 @@ class MainActivity : AppCompatActivity() {
         sheetSubtitle.setOnLongClickListener { clearRoutes(); true }
 
         setContentView(root)
+
+        // ── Load bundled graph on background thread ───────────────────────────
+        // Reading 9.2 MB of binary data + parsing 4 GPX routes previously blocked the
+        // main thread for 2-4 seconds. Now the UI appears immediately and the loading
+        // banner hides once the graph is ready (~1-3 s on a modern device).
+        routingBanner.text = "⏳  Loading navigation data…"
+        routingBanner.visibility = View.VISIBLE
+        Thread {
+            val g = GraphStore.load(this)
+            runOnUiThread {
+                graph              = g
+                bundledGraph       = g
+                bundledRouter      = AStarRouter(g)
+                router             = AStarRouter(g)
+                metricsCalculator  = RouteMetricsCalculator(g)
+                candidateGenerator = RouteCandidateGenerator(g, router, metricsCalculator)
+                instructionGenerator = InstructionGenerator(g)
+                graphReady         = true
+                routingBanner.visibility = View.GONE
+            }
+        }.start()
 
         map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
@@ -966,6 +982,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildRoutes() {
+        if (!graphReady) {
+            sheetTitle.text = "Still loading navigation data…"
+            return
+        }
         if (tapPoints.size < 2) return
         routeCandidates.clear(); activeIndex = 0; routeOverlay.clear()
         sheetTitle.text    = "Finding route…"
@@ -1237,8 +1257,13 @@ class MainActivity : AppCompatActivity() {
             haversine(start.latitude, start.longitude, BEN_LOMOND_LAT, BEN_LOMOND_LON) < 15_000.0 &&
             haversine(end.latitude,   end.longitude,   BEN_LOMOND_LAT, BEN_LOMOND_LON) < 15_000.0
         if ((nearBenNevis || nearBenLomond) && sId != eId) {
-            for (s in startIds) {
-                for (e in endIds) {
+            // Try the single best node pair first, then expand to 3×3 = 9 combinations.
+            // Previously 10×10 = 100 combinations, each trying up to 5 named routes.
+            val c0 = candidateGenerator.generateCuratedCandidates(sId, eId)
+            if (c0.isNotEmpty()) return c0
+            for (s in startIds.take(3)) {
+                for (e in endIds.take(3)) {
+                    if (s == sId && e == eId) continue   // already tried
                     val c = candidateGenerator.generateCuratedCandidates(s, e)
                     if (c.isNotEmpty()) return c
                 }
@@ -2405,13 +2430,9 @@ class MainActivity : AppCompatActivity() {
         routingBanner.text = "🅿️  Finding car parks…"
         routingBanner.visibility = View.VISIBLE
         Thread {
-            // Retry once on failure — first-run cold-network timeouts are common
-            var parks = try { HillSearchService.findNearbyCarParks(result.lat, result.lon) }
-                        catch (e: Exception) { emptyList() }
-            if (parks.isEmpty()) {
-                parks = try { HillSearchService.findNearbyCarParks(result.lat, result.lon) }
-                        catch (e: Exception) { emptyList() }
-            }
+            // Queries now run in parallel inside findNearbyCarParks; a single call is enough.
+            val parks = try { HillSearchService.findNearbyCarParks(result.lat, result.lon) }
+                        catch (_: Exception) { emptyList() }
             runOnUiThread {
                 routingBanner.visibility = View.GONE
                 when {
