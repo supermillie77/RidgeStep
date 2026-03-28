@@ -415,10 +415,18 @@ class MainActivity : AppCompatActivity() {
         root.addView(locateFab, locateFabParams)
 
         // ── Near me FAB (bottom-left, above locate FAB) ──────────────────────
-        val nearFab = FloatingActionButton(this).apply {
-            setImageResource(android.R.drawable.ic_menu_agenda)
-            contentDescription = "Hills near me"
-            setOnClickListener { showNearbyHills() }
+        val nearFab = ExtendedFloatingActionButton(this).apply {
+            setIconResource(android.R.drawable.ic_menu_agenda)
+            setText("Hills near me")
+            contentDescription = "Hills near me — see the closest summits to your location"
+            if (btnPrefs.getBoolean("used_near", false)) isExtended = false
+            setOnClickListener {
+                if (!btnPrefs.getBoolean("used_near", false)) {
+                    btnPrefs.edit().putBoolean("used_near", true).apply()
+                    shrink()
+                }
+                showNearbyHills()
+            }
         }
         val nearFabParams = CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
@@ -487,28 +495,30 @@ class MainActivity : AppCompatActivity() {
         weatherBanner = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF2E4A1E.toInt())  // default: dark green (good conditions)
-            val ph = (resources.displayMetrics.density * 16).toInt()
-            val pv = (resources.displayMetrics.density * 14).toInt()
-            setPadding(ph, pv, (resources.displayMetrics.density * 8).toInt(), pv)
+            val ph = (resources.displayMetrics.density * 20).toInt()
+            val pv = (resources.displayMetrics.density * 18).toInt()
+            setPadding(ph, pv, (resources.displayMetrics.density * 10).toInt(), pv)
             gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = (resources.displayMetrics.density * 72).toInt()
             visibility = View.GONE
         }
         weatherBannerText = TextView(this).apply {
-            textSize = 15f
+            textSize = 17f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
         }
         weatherFindBtn = TextView(this).apply {
-            text = "UK forecast"
-            textSize = 13f
+            text = "Good areas today"
+            textSize = 15f
             setTextColor(0xFF80DEEA.toInt())
-            val ph = (resources.displayMetrics.density * 12).toInt()
+            val ph = (resources.displayMetrics.density * 14).toInt()
             setPadding(ph, 0, (resources.displayMetrics.density * 4).toInt(), 0)
         }
         val weatherDismissBtn = TextView(this).apply {
             text = "✕"
-            textSize = 16f
+            textSize = 18f
             setTextColor(0xFFB0BEC5.toInt())
-            val ph = (resources.displayMetrics.density * 8).toInt()
+            val ph = (resources.displayMetrics.density * 10).toInt()
             setPadding(ph, 0, 0, 0)
             setOnClickListener { weatherBanner.visibility = View.GONE }
         }
@@ -2219,7 +2229,7 @@ class MainActivity : AppCompatActivity() {
         }
         val searchInput = EditText(this).apply {
             hint = if (addingSummit) "Next summit name…"
-                   else "Mountain name, or 'Cairngorms hills'…"
+                   else "Mountain name, or 'Torridon hills'…"
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                         android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS
             setTextColor(Color.WHITE)
@@ -2227,10 +2237,8 @@ class MainActivity : AppCompatActivity() {
             background = null
             setPadding((dp * 10).toInt(), (dp * 10).toInt(), (dp * 6).toInt(), (dp * 10).toInt())
         }
-        if (initialQuery.isNotEmpty()) {
-            searchInput.setText(initialQuery)
-            searchInput.setSelection(initialQuery.length)
-        }
+        // Note: setText is intentionally deferred to after dialog.show() so the
+        // TextWatcher is already attached and fires the search immediately.
         val micBtn = TextView(this).apply {
             text = "🎙"
             textSize = 20f
@@ -2260,7 +2268,7 @@ class MainActivity : AppCompatActivity() {
         ))
 
         val statusText = TextView(this).apply {
-            text = "Type a mountain name, or 'Cairngorms hills'…"
+            text = "Type a mountain name, or 'hills near [place]'…"
             textSize = 12f
             setTextColor(0xFF888888.toInt())
             setPadding(0, (dp * 8).toInt(), 0, (dp * 4).toInt())
@@ -2597,6 +2605,12 @@ class MainActivity : AppCompatActivity() {
 
         dialog.show()
         searchInput.requestFocus()
+        if (initialQuery.isNotEmpty()) {
+            searchInput.post {
+                searchInput.setText(initialQuery)
+                searchInput.setSelection(initialQuery.length)
+            }
+        }
     }
 
     /**
@@ -3102,55 +3116,42 @@ class MainActivity : AppCompatActivity() {
         weatherBannerText.text =
             "$emoji ${current.description.replaceFirstChar { it.uppercaseChar() }}$windText"
 
-        // Always show the UK forecast button
         val clearAreas = allAreas.filter { it.isGood }
         weatherFindBtn.visibility = View.VISIBLE
-        weatherFindBtn.text = if (clearAreas.isEmpty()) "UK forecast" else "Good areas today"
-        weatherFindBtn.setOnClickListener { showWeatherAreasDialog(allAreas, clearAreas) }
+        weatherFindBtn.text = if (clearAreas.isEmpty()) "No good areas today" else "Good areas today"
+        weatherFindBtn.setOnClickListener { showWeatherAreasDialog(clearAreas) }
 
         weatherBanner.visibility = View.VISIBLE
     }
 
-    private fun showWeatherAreasDialog(
-        allAreas: List<WeatherService.AreaWeather>,
-        clearAreas: List<WeatherService.AreaWeather>
-    ) {
-        if (allAreas.isEmpty()) {
+    private fun showWeatherAreasDialog(clearAreas: List<WeatherService.AreaWeather>) {
+        if (clearAreas.isEmpty()) {
             AlertDialog.Builder(this)
-                .setTitle("UK hill weather")
-                .setMessage("Unable to load weather forecast. Check your connection and try again.")
+                .setTitle("No good conditions today")
+                .setMessage("No UK hill areas currently have clear, calm conditions suitable for hillwalking. Check back later or monitor the forecast.")
                 .setPositiveButton("OK", null)
                 .show()
             return
         }
 
-        val items = allAreas.map { area ->
+        val items = clearAreas.map { area ->
             val cond = when {
-                area.code == 0       -> "\u2600"          // ☀
-                area.code in 1..3    -> "\u26c5"          // ⛅
-                area.code in 45..48  -> "\uD83C\uDF2B"   // 🌫
-                area.code in 51..65  -> "\uD83C\uDF27"   // 🌧
-                area.code in 71..77  -> "\u2744"          // ❄
-                area.code >= 95      -> "\u26C8"          // ⛈
-                else                 -> "\u2601"          // ☁
+                area.code == 0    -> "\u2600"    // ☀
+                area.code in 1..3 -> "\u26c5"    // ⛅
+                else              -> "\u26c5"    // ⛅ (all items here are isGood so code ≤ 3)
             }
-            val wind = if (area.windKmh >= 20) "  ${area.windKmh.toInt()} km/h" else ""
+            val wind = if (area.windKmh >= 10) "  ${area.windKmh.toInt()} km/h wind" else ""
             "$cond  ${area.areaName}  —  ${area.description}$wind"
         }.toTypedArray()
 
-        val title = if (clearAreas.isEmpty())
-            "No good conditions across UK hills today"
-        else
-            "${clearAreas.size} area${if (clearAreas.size == 1) "" else "s"} with good conditions"
+        val title = "${clearAreas.size} area${if (clearAreas.size == 1) "" else "s"} with good conditions today"
 
         AlertDialog.Builder(this)
             .setTitle(title)
             .setItems(items) { _, idx ->
-                val picked = allAreas[idx]
-                if (picked.isGood) {
-                    weatherBanner.visibility = View.GONE
-                    showHillSearch("${picked.areaName} hills")
-                }
+                val picked = clearAreas[idx]
+                weatherBanner.visibility = View.GONE
+                showHillSearch("${picked.areaName} hills")
             }
             .setNegativeButton("Close", null)
             .show()
