@@ -160,7 +160,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Tap \"Allow location\" below and select \"Allow only while using the app\" on the next screen."
+            android:text="Tap &quot;Allow location&quot; below and select &quot;Allow only while using the app&quot; on the next screen."
             android:textSize="12sp"
             android:textColor="#FF6B35"
             android:lineSpacingMultiplier="1.4"/>
