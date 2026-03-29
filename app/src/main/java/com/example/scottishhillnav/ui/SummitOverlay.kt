@@ -91,16 +91,30 @@ class SummitOverlay(density: Float) : Overlay() {
          * else a category colour is needed.
          */
         fun categoryColor(category: String): Int = when (category) {
-            "Munro"      -> 0xFFFF6D00.toInt()   // vivid orange
-            "Corbett"    -> 0xFFE53935.toInt()   // red
-            "Graham"     -> 0xFFAB47BC.toInt()   // purple
-            "Donald"     -> 0xFF43A047.toInt()   // green
-            "Fiona"      -> 0xFFFF4081.toInt()   // pink
-            "Sub 2000"   -> 0xFFFFD600.toInt()   // amber/yellow
-            "Wainwright" -> 0xFF1E88E5.toInt()   // blue
-            "Hewitt"     -> 0xFF00ACC1.toInt()   // cyan
-            "Island"     -> 0xFF26A69A.toInt()   // teal
-            else         -> 0xFFFF7000.toInt()   // fallback orange
+            // Hill categories
+            "Munro"          -> 0xFFFF6D00.toInt()   // vivid orange
+            "Corbett"        -> 0xFFE53935.toInt()   // red
+            "Graham"         -> 0xFFAB47BC.toInt()   // purple
+            "Donald"         -> 0xFF43A047.toInt()   // green
+            "Fiona"          -> 0xFFFF4081.toInt()   // pink
+            "Sub 2000"       -> 0xFFFFD600.toInt()   // amber/yellow
+            "Wainwright"     -> 0xFF1E88E5.toInt()   // blue
+            "Hewitt"         -> 0xFF00ACC1.toInt()   // cyan
+            "Island"         -> 0xFF26A69A.toInt()   // teal
+            // Attraction categories
+            "Waterfall"      -> 0xFF29B6F6.toInt()   // light blue
+            "Castle"         -> 0xFF8D6E63.toInt()   // warm brown
+            "Ruins"          -> 0xFFA1887F.toInt()   // lighter brown
+            "Monument"       -> 0xFF90A4AE.toInt()   // blue-grey
+            "Abbey"          -> 0xFF7986CB.toInt()   // indigo
+            "Battlefield"    -> 0xFFEF9A9A.toInt()   // soft red
+            "Fort"           -> 0xFFBCAAA4.toInt()   // stone
+            "Viewpoint"      -> 0xFF66BB6A.toInt()   // mid green
+            "Attraction"     -> 0xFFFFB74D.toInt()   // amber
+            "Nature Reserve" -> 0xFF4CAF50.toInt()   // deep green
+            "Beach"          -> 0xFFFFF176.toInt()   // sand yellow
+            "Cave"           -> 0xFF9E9E9E.toInt()   // grey
+            else             -> 0xFFFF7000.toInt()   // fallback orange
         }
 
         /** All categories in display order, used for legend rendering. */

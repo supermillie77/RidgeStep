@@ -34,6 +34,7 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.app.ActivityCompat
 import com.example.scottishhillnav.DemProvider
 import com.example.scottishhillnav.hills.CarPark
+import com.example.scottishhillnav.hills.Attraction
 import com.example.scottishhillnav.hills.Hill
 import com.example.scottishhillnav.hills.HillRepository
 import com.example.scottishhillnav.hills.HillSearchService
@@ -3010,7 +3011,10 @@ class MainActivity : AppCompatActivity() {
 
         val sheet = NearbyHillsSheet().apply {
             allEntries = all
+            this.refLat = refLat
+            this.refLon = refLon
             onHillPicked = { hill -> routeToHillFromRepo(hill) }
+            onAttractionPicked = { attraction -> routeToAttraction(attraction) }
         }
         sheet.show(supportFragmentManager, "nearby_hills")
     }
@@ -3046,6 +3050,27 @@ class MainActivity : AppCompatActivity() {
             // No GPS — fall back to the search-selected flow (user taps start)
             onHillSelected(result, null)
         }
+    }
+
+    /**
+     * Routes to [attraction] using the user's current GPS position as the start.
+     * Uses the same routing engine as hills — finds the nearest mapped footpath.
+     */
+    private fun routeToAttraction(attraction: Attraction) {
+        clearRoutes()
+        val loc = lastLocation
+        val startPt = if (loc != null) GeoPoint(loc.latitude, loc.longitude)
+                      else map.mapCenter
+        val destPt  = GeoPoint(attraction.lat, attraction.lon)
+
+        navPhase = NavPhase.HILL_NAV
+        tapPoints.addAll(listOf(startPt, destPt))
+        tapMarkers.add(addMarker(startPt, "Start",         0xFF2E7D32.toInt()))
+        tapMarkers.add(addMarker(destPt,  attraction.name, 0xFF1565C0.toInt()))
+
+        map.controller.setZoom(13.0)
+        map.controller.setCenter(destPt)
+        buildRoutes()
     }
 
     /**
