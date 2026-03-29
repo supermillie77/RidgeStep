@@ -5,25 +5,26 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import com.example.scottishhillnav.R
 import com.example.scottishhillnav.hills.Hill
 import com.example.scottishhillnav.routing.RouteWarningPolicy
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import kotlin.math.roundToInt
 
 /**
  * Bottom sheet listing hills within a user-selected radius of their GPS position.
  * Radius choices: 5, 10, 15, 20, 25 miles. Distances are displayed in miles.
+ * Times are Naismith estimates to the summit (one-way, straight-line distance).
  */
 class NearbyHillsSheet : BottomSheetDialogFragment() {
 
     data class Entry(val hill: Hill, val distanceM: Double)
 
-    /** All hills with their distances from the reference point — unsorted/unfiltered. */
+    /** All hills with distances from the reference point — the sheet filters by radius. */
     var allEntries: List<Entry> = emptyList()
     var onHillPicked: ((Hill) -> Unit)? = null
 
@@ -47,11 +48,21 @@ class NearbyHillsSheet : BottomSheetDialogFragment() {
         rebuildList()
     }
 
+    /** Force the sheet fully open so the list isn't hidden behind a peek area. */
+    override fun onStart() {
+        super.onStart()
+        val d = dialog as? BottomSheetDialog ?: return
+        val sheet = d.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) ?: return
+        val behavior = BottomSheetBehavior.from(sheet)
+        behavior.skipCollapsed = true
+        behavior.state = BottomSheetBehavior.STATE_EXPANDED
+    }
+
     // ── Chips ─────────────────────────────────────────────────────────────────
 
     private fun buildChips() {
         chipsRow.removeAllViews()
-        val dp = resources.displayMetrics.density
+        val dp   = resources.displayMetrics.density
         val hPad = (14 * dp).toInt()
         val vPad = (6  * dp).toInt()
         val gap  = (8  * dp).toInt()
@@ -105,7 +116,7 @@ class NearbyHillsSheet : BottomSheetDialogFragment() {
             return
         }
 
-        subtitle.text = "${visible.size} hill${if (visible.size == 1) "" else "s"} within $selectedRadiusMiles miles"
+        subtitle.text = "${visible.size} hill${if (visible.size == 1) "" else "s"} within $selectedRadiusMiles miles  ·  times are to the summit, one way"
 
         for (entry in visible) {
             val row = LayoutInflater.from(requireContext())
@@ -124,7 +135,7 @@ class NearbyHillsSheet : BottomSheetDialogFragment() {
             row.findViewById<TextView>(R.id.hillMeta).text = meta
 
             row.findViewById<TextView>(R.id.hillDistance).text = formatMiles(entry.distanceM)
-            row.findViewById<TextView>(R.id.hillEta).text = estimateTime(entry.hill, entry.distanceM)
+            row.findViewById<TextView>(R.id.hillEta).text = "to summit " + estimateTime(entry.hill, entry.distanceM)
 
             val grade = RouteWarningPolicy.gradeForCategory(entry.hill.category)
             val gradeView = row.findViewById<TextView>(R.id.hillGrade)
@@ -149,13 +160,14 @@ class NearbyHillsSheet : BottomSheetDialogFragment() {
 
     private fun formatMiles(m: Double): String {
         val miles = m / 1609.34
-        return if (miles < 0.95) "${(m / 1609.34 * 10).roundToInt() / 10.0} mi"
-        else "${"%.1f".format(miles)} mi"
+        return "${"%.1f".format(miles)} mi"
     }
 
     /**
      * Naismith's Rule: 4 km/h walking + 1 hr per 600 m ascent.
-     * Ascent approximated as summit elevation (conservative — assumes start near sea level).
+     * Distance is straight-line from user to summit (conservative overestimate for
+     * route distance). Ascent assumes start at sea level — real ascent will be less
+     * if the car park is elevated.
      */
     private fun estimateTime(hill: Hill, distanceM: Double): String {
         val distKm    = distanceM / 1000.0
