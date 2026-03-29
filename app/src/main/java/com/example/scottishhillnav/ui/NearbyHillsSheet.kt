@@ -8,6 +8,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.example.scottishhillnav.R
 import com.example.scottishhillnav.hills.Hill
+import com.example.scottishhillnav.routing.RouteWarningPolicy
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import kotlin.math.roundToInt
 
@@ -56,6 +57,16 @@ class NearbyHillsSheet : BottomSheetDialogFragment() {
 
             row.findViewById<TextView>(R.id.hillDistance).text = formatDist(entry.distanceM)
             row.findViewById<TextView>(R.id.hillEta).text = estimateTime(entry.hill, entry.distanceM)
+
+            val grade = RouteWarningPolicy.gradeForCategory(entry.hill.category)
+            val gradeView = row.findViewById<TextView>(R.id.hillGrade)
+            gradeView.text = RouteWarningPolicy.gradeLabel(grade)
+            gradeView.setTextColor(when (grade) {
+                RouteWarningPolicy.DifficultyGrade.MODERATE_WALK   -> 0xFF4CAF50.toInt()  // green
+                RouteWarningPolicy.DifficultyGrade.STRENUOUS_WALK  -> 0xFFFF9800.toInt()  // orange
+                RouteWarningPolicy.DifficultyGrade.SCRAMBLE        -> 0xFFFFEB3B.toInt()  // yellow
+                RouteWarningPolicy.DifficultyGrade.TECHNICAL_CLIMB -> 0xFFF44336.toInt()  // red
+            })
 
             row.setOnClickListener {
                 onHillPicked?.invoke(entry.hill)

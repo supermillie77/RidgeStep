@@ -58,6 +58,19 @@ object RouteWarningPolicy {
         return warnings
     }
 
+    /**
+     * Returns a grade based solely on hill category, for use where no route slope data
+     * is available (e.g. the "Hills near me" discovery list).
+     *
+     * Munros, Corbetts, Fionas and Islands are always at least Strenuous — they are
+     * high, remote or on rough terrain. Grahams, Donalds, Wainwrights, Hewitts and
+     * Sub 2000s are graded Moderate as a conservative starting estimate.
+     */
+    fun gradeForCategory(category: String): DifficultyGrade = when (category.lowercase().trim()) {
+        "munro", "corbett", "fiona", "island" -> DifficultyGrade.STRENUOUS_WALK
+        else                                   -> DifficultyGrade.MODERATE_WALK
+    }
+
     /** Full liability disclaimer text shown in the acknowledgement dialog. */
     fun liabilityText(grade: DifficultyGrade): String = when (grade) {
         DifficultyGrade.TECHNICAL_CLIMB ->
