@@ -201,6 +201,9 @@
                     android:text="England &amp; Wales  ≥ 610 m" android:textSize="10sp"
                     android:textColor="@color/ob_subtitle"/>
             </LinearLayout>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="520" android:textSize="13sp" android:textStyle="bold"
+                android:textColor="#00ACC1"/>
         </LinearLayout>
 
         <!-- Island -->
@@ -220,6 +223,9 @@
                     android:text="Scottish island summits" android:textSize="10sp"
                     android:textColor="@color/ob_subtitle"/>
             </LinearLayout>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="162" android:textSize="13sp" android:textStyle="bold"
+                android:textColor="#26A69A"/>
         </LinearLayout>
 
         <!-- Sub 2000 -->
@@ -239,6 +245,9 @@
                     android:text="Scotland  ≥ 500 m, named" android:textSize="10sp"
                     android:textColor="@color/ob_subtitle"/>
             </LinearLayout>
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="1,387" android:textSize="13sp" android:textStyle="bold"
+                android:textColor="#FFD600"/>
         </LinearLayout>
 
     </LinearLayout>
