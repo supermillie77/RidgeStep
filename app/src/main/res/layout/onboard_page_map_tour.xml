@@ -33,7 +33,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Six ways to navigate — buttons expand on first use, then tuck to icons"
+            android:text="Six buttons — expand on first use, then tuck to icons"
             android:textSize="12sp"
             android:textColor="@color/ob_subtitle"
             android:layout_marginTop="4dp"
@@ -61,13 +61,13 @@
             android:background="@color/ob_surface"
             android:padding="12dp"
             android:layout_marginBottom="2dp">
-            <TextView
+            <ImageView
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:text="&#128269;"
-                android:textSize="20sp"
-                android:gravity="center"
-                android:background="@color/ob_background"/>
+                android:src="@android:drawable/ic_menu_search"
+                android:padding="8dp"
+                android:background="@color/ob_background"
+                android:contentDescription="Find a hill"/>
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -102,13 +102,13 @@
             android:background="@color/ob_surface"
             android:padding="12dp"
             android:layout_marginBottom="2dp">
-            <TextView
+            <ImageView
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:text="&#128205;"
-                android:textSize="20sp"
-                android:gravity="center"
-                android:background="@color/ob_background"/>
+                android:src="@android:drawable/ic_menu_agenda"
+                android:padding="8dp"
+                android:background="@color/ob_background"
+                android:contentDescription="Hills near me"/>
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -143,13 +143,13 @@
             android:background="@color/ob_surface"
             android:padding="12dp"
             android:layout_marginBottom="2dp">
-            <TextView
+            <ImageView
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:text="&#127919;"
-                android:textSize="20sp"
-                android:gravity="center"
-                android:background="@color/ob_background"/>
+                android:src="@drawable/ic_my_location"
+                android:padding="8dp"
+                android:background="@color/ob_background"
+                android:contentDescription="Re-centre map"/>
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -184,13 +184,13 @@
             android:background="@color/ob_surface"
             android:padding="12dp"
             android:layout_marginBottom="2dp">
-            <TextView
+            <ImageView
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:text="&#128266;"
-                android:textSize="20sp"
-                android:gravity="center"
-                android:background="@color/ob_background"/>
+                android:src="@android:drawable/ic_lock_silent_mode_off"
+                android:padding="8dp"
+                android:background="@color/ob_background"
+                android:contentDescription="Voice guide"/>
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -225,14 +225,13 @@
             android:background="@color/ob_surface"
             android:padding="12dp"
             android:layout_marginBottom="2dp">
-            <TextView
+            <ImageView
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:text="&#8505;"
-                android:textSize="20sp"
-                android:textColor="@color/ob_headline"
-                android:gravity="center"
-                android:background="@color/ob_background"/>
+                android:src="@android:drawable/ic_menu_info_details"
+                android:padding="8dp"
+                android:background="@color/ob_background"
+                android:contentDescription="Stats and info"/>
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
