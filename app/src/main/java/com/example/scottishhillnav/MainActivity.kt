@@ -2996,30 +2996,20 @@ class MainActivity : AppCompatActivity() {
      * GPS location. If location is unknown, falls back to the map centre.
      */
     private fun showNearbyHills() {
-        val refLat: Double
-        val refLon: Double
         val loc = lastLocation
-        if (loc != null) {
-            refLat = loc.latitude
-            refLon = loc.longitude
-        } else {
-            val centre = map.mapCenter
-            refLat = centre.latitude
-            refLon = centre.longitude
+        val refLat = loc?.latitude  ?: map.mapCenter.latitude
+        val refLon = loc?.longitude ?: map.mapCenter.longitude
+
+        // Pass all hills with their distances — the sheet filters by the user's chosen radius
+        val all = HillRepository.hills.map { hill ->
+            NearbyHillsSheet.Entry(
+                hill = hill,
+                distanceM = haversine(refLat, refLon, hill.summitLat, hill.summitLon)
+            )
         }
 
-        val sorted = HillRepository.hills
-            .map { hill ->
-                NearbyHillsSheet.Entry(
-                    hill = hill,
-                    distanceM = haversine(refLat, refLon, hill.summitLat, hill.summitLon)
-                )
-            }
-            .sortedBy { it.distanceM }
-            .take(15)
-
         val sheet = NearbyHillsSheet().apply {
-            entries = sorted
+            allEntries = all
             onHillPicked = { hill -> routeToHillFromRepo(hill) }
         }
         sheet.show(supportFragmentManager, "nearby_hills")

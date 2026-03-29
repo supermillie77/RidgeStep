@@ -22,7 +22,7 @@
         android:paddingStart="20dp"
         android:paddingEnd="20dp"
         android:paddingTop="10dp"
-        android:paddingBottom="12dp">
+        android:paddingBottom="8dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -43,18 +43,44 @@
 
     </LinearLayout>
 
+    <!-- Radius chips -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="10dp"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:id="@+id/radiusChipsRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"/>
+
+    </HorizontalScrollView>
+
     <!-- Divider -->
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:background="#1E3347"/>
 
-    <!-- Hills list — rows added programmatically -->
-    <LinearLayout
-        android:id="@+id/nearbyHillsContainer"
+    <!-- Hills list in a scroll view so long lists don't clip -->
+    <ScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"/>
+        android:maxHeight="480dp"
+        android:fadeScrollbars="true">
+
+        <LinearLayout
+            android:id="@+id/nearbyHillsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"/>
+
+    </ScrollView>
 
     <!-- Bottom padding -->
     <View

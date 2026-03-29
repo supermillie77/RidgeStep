@@ -1,10 +1,13 @@
 package com.example.scottishhillnav.ui
 
+import android.graphics.Typeface
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import com.example.scottishhillnav.R
 import com.example.scottishhillnav.hills.Hill
@@ -13,33 +16,98 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import kotlin.math.roundToInt
 
 /**
- * Bottom sheet listing nearby hills sorted by distance.
- * Caller provides [entries] (Hill + distanceM) and sets [onHillPicked].
+ * Bottom sheet listing hills within a user-selected radius of their GPS position.
+ * Radius choices: 5, 10, 15, 20, 25 miles. Distances are displayed in miles.
  */
 class NearbyHillsSheet : BottomSheetDialogFragment() {
 
     data class Entry(val hill: Hill, val distanceM: Double)
 
-    var entries: List<Entry> = emptyList()
+    /** All hills with their distances from the reference point — unsorted/unfiltered. */
+    var allEntries: List<Entry> = emptyList()
     var onHillPicked: ((Hill) -> Unit)? = null
+
+    private val radiusOptions = intArrayOf(5, 10, 15, 20, 25)   // miles
+    private var selectedRadiusMiles = 10
+
+    private lateinit var subtitle:   TextView
+    private lateinit var container:  LinearLayout
+    private lateinit var chipsRow:   LinearLayout
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View = inflater.inflate(R.layout.bottom_sheet_nearby_hills, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        val container = view.findViewById<LinearLayout>(R.id.nearbyHillsContainer)
-        val subtitle  = view.findViewById<TextView>(R.id.nearbySubtitle)
+        subtitle  = view.findViewById(R.id.nearbySubtitle)
+        container = view.findViewById(R.id.nearbyHillsContainer)
+        chipsRow  = view.findViewById(R.id.radiusChipsRow)
 
-        if (entries.isEmpty()) {
-            subtitle.text = "No hills found nearby"
+        buildChips()
+        rebuildList()
+    }
+
+    // ── Chips ─────────────────────────────────────────────────────────────────
+
+    private fun buildChips() {
+        chipsRow.removeAllViews()
+        val dp = resources.displayMetrics.density
+        val hPad = (14 * dp).toInt()
+        val vPad = (6  * dp).toInt()
+        val gap  = (8  * dp).toInt()
+
+        for (miles in radiusOptions) {
+            val chip = TextView(requireContext()).apply {
+                text = "$miles mi"
+                textSize = 13f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(hPad, vPad, hPad, vPad)
+                setOnClickListener {
+                    if (selectedRadiusMiles != miles) {
+                        selectedRadiusMiles = miles
+                        buildChips()
+                        rebuildList()
+                    }
+                }
+            }
+            styleChip(chip, miles == selectedRadiusMiles)
+
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, gap, 0) }
+            chipsRow.addView(chip, params)
+        }
+    }
+
+    private fun styleChip(chip: TextView, active: Boolean) {
+        if (active) {
+            chip.setBackgroundColor(0xFFFF6B35.toInt())
+            chip.setTextColor(0xFFFFFFFF.toInt())
+        } else {
+            chip.setBackgroundColor(0xFF1E3347.toInt())
+            chip.setTextColor(0xFF7B95A9.toInt())
+        }
+    }
+
+    // ── List ──────────────────────────────────────────────────────────────────
+
+    private fun rebuildList() {
+        container.removeAllViews()
+
+        val radiusM = selectedRadiusMiles * 1609.34
+        val visible = allEntries
+            .filter { it.distanceM <= radiusM }
+            .sortedBy { it.distanceM }
+
+        if (visible.isEmpty()) {
+            subtitle.text = "No hills within $selectedRadiusMiles miles"
             return
         }
 
-        val maxDist = entries.last().distanceM
-        subtitle.text = "Within ${formatDist(maxDist)} of your location"
+        subtitle.text = "${visible.size} hill${if (visible.size == 1) "" else "s"} within $selectedRadiusMiles miles"
 
-        for (entry in entries) {
+        for (entry in visible) {
             val row = LayoutInflater.from(requireContext())
                 .inflate(R.layout.item_nearby_hill, container, false)
 
@@ -55,17 +123,17 @@ class NearbyHillsSheet : BottomSheetDialogFragment() {
             }
             row.findViewById<TextView>(R.id.hillMeta).text = meta
 
-            row.findViewById<TextView>(R.id.hillDistance).text = formatDist(entry.distanceM)
+            row.findViewById<TextView>(R.id.hillDistance).text = formatMiles(entry.distanceM)
             row.findViewById<TextView>(R.id.hillEta).text = estimateTime(entry.hill, entry.distanceM)
 
             val grade = RouteWarningPolicy.gradeForCategory(entry.hill.category)
             val gradeView = row.findViewById<TextView>(R.id.hillGrade)
             gradeView.text = RouteWarningPolicy.gradeLabel(grade)
             gradeView.setTextColor(when (grade) {
-                RouteWarningPolicy.DifficultyGrade.MODERATE_WALK   -> 0xFF4CAF50.toInt()  // green
-                RouteWarningPolicy.DifficultyGrade.STRENUOUS_WALK  -> 0xFFFF9800.toInt()  // orange
-                RouteWarningPolicy.DifficultyGrade.SCRAMBLE        -> 0xFFFFEB3B.toInt()  // yellow
-                RouteWarningPolicy.DifficultyGrade.TECHNICAL_CLIMB -> 0xFFF44336.toInt()  // red
+                RouteWarningPolicy.DifficultyGrade.MODERATE_WALK   -> 0xFF4CAF50.toInt()
+                RouteWarningPolicy.DifficultyGrade.STRENUOUS_WALK  -> 0xFFFF9800.toInt()
+                RouteWarningPolicy.DifficultyGrade.SCRAMBLE        -> 0xFFFFEB3B.toInt()
+                RouteWarningPolicy.DifficultyGrade.TECHNICAL_CLIMB -> 0xFFF44336.toInt()
             })
 
             row.setOnClickListener {
@@ -77,12 +145,17 @@ class NearbyHillsSheet : BottomSheetDialogFragment() {
         }
     }
 
-    private fun formatDist(m: Double): String =
-        if (m < 1000) "${m.roundToInt()} m" else "${"%.1f".format(m / 1000)} km"
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun formatMiles(m: Double): String {
+        val miles = m / 1609.34
+        return if (miles < 0.95) "${(m / 1609.34 * 10).roundToInt() / 10.0} mi"
+        else "${"%.1f".format(miles)} mi"
+    }
 
     /**
-     * Naismith's Rule estimate: 4 km/h walking + 1 hr per 600 m ascent.
-     * Ascent is approximated as summit elevation (assumes start near sea level).
+     * Naismith's Rule: 4 km/h walking + 1 hr per 600 m ascent.
+     * Ascent approximated as summit elevation (conservative — assumes start near sea level).
      */
     private fun estimateTime(hill: Hill, distanceM: Double): String {
         val distKm    = distanceM / 1000.0
