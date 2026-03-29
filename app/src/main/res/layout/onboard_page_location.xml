@@ -25,23 +25,23 @@
             android:textSize="80sp"
             android:gravity="center"/>
 
-        <!-- Accuracy ring hint -->
+        <!-- Accuracy ring hint (orange to match the pin) -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="●"
-            android:textSize="12sp"
-            android:textColor="#302979FF"
+            android:textSize="16sp"
+            android:textColor="#33FF6D00"
             android:gravity="center"/>
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="-22dp"
+            android:layout_marginTop="-28dp"
             android:text="●"
             android:textSize="10sp"
-            android:textColor="#FF2979FF"
+            android:textColor="#FFFF6D00"
             android:gravity="center"/>
 
         <!-- Three benefit bullets -->
@@ -69,7 +69,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Blue dot shows your live position on the map"
+                    android:text="Orange pin shows your live position on the map"
                     android:textSize="13sp"
                     android:textColor="@color/ob_subtitle"
                     android:lineSpacingMultiplier="1.3"/>
