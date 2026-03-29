@@ -6,21 +6,21 @@
     android:orientation="vertical"
     android:background="@color/ob_background">
 
-    <!-- Header (22%) -->
+    <!-- Header (18%) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="22"
+        android:layout_weight="18"
         android:orientation="vertical"
         android:paddingStart="28dp"
         android:paddingEnd="28dp"
-        android:paddingTop="28dp">
+        android:paddingTop="24dp">
 
         <View
             android:layout_width="32dp"
             android:layout_height="3dp"
             android:background="#FF6B35"
-            android:layout_marginBottom="14dp"/>
+            android:layout_marginBottom="12dp"/>
 
         <TextView
             android:layout_width="wrap_content"
@@ -33,23 +33,23 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Three buttons in the corner — they expand on first use, then tuck to icons"
-            android:textSize="13sp"
+            android:text="Six ways to navigate — buttons expand on first use, then tuck to icons"
+            android:textSize="12sp"
             android:textColor="@color/ob_subtitle"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:lineSpacingMultiplier="1.3"/>
 
     </LinearLayout>
 
-    <!-- Controls list (78%) -->
+    <!-- Controls list (82%) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="78"
+        android:layout_weight="82"
         android:orientation="vertical"
         android:paddingStart="20dp"
         android:paddingEnd="20dp"
-        android:paddingBottom="16dp">
+        android:paddingBottom="12dp">
 
         <!-- Find a hill -->
         <LinearLayout
@@ -59,13 +59,13 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@color/ob_surface"
-            android:padding="16dp"
-            android:layout_marginBottom="3dp">
+            android:padding="12dp"
+            android:layout_marginBottom="2dp">
             <TextView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:text="&#128269;"
-                android:textSize="22sp"
+                android:textSize="20sp"
                 android:gravity="center"
                 android:background="@color/ob_background"/>
             <LinearLayout
@@ -73,22 +73,104 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:layout_marginStart="14dp">
+                android:layout_marginStart="12dp">
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Find a hill"
-                    android:textSize="15sp"
+                    android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/ob_headline"/>
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Search any summit, pick a car park and get a real footpath route"
-                    android:textSize="12sp"
+                    android:textSize="11sp"
                     android:textColor="@color/ob_subtitle"
-                    android:layout_marginTop="2dp"
-                    android:lineSpacingMultiplier="1.3"/>
+                    android:layout_marginTop="1dp"
+                    android:lineSpacingMultiplier="1.2"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Hills near me -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/ob_surface"
+            android:padding="12dp"
+            android:layout_marginBottom="2dp">
+            <TextView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:text="&#128205;"
+                android:textSize="20sp"
+                android:gravity="center"
+                android:background="@color/ob_background"/>
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="12dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Hills near me"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/ob_headline"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="See the closest summits to your location with distance and time estimates"
+                    android:textSize="11sp"
+                    android:textColor="@color/ob_subtitle"
+                    android:layout_marginTop="1dp"
+                    android:lineSpacingMultiplier="1.2"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Re-centre -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/ob_surface"
+            android:padding="12dp"
+            android:layout_marginBottom="2dp">
+            <TextView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:text="&#127919;"
+                android:textSize="20sp"
+                android:gravity="center"
+                android:background="@color/ob_background"/>
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="12dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Re-centre map"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/ob_headline"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Jump the map back to your GPS position at any time"
+                    android:textSize="11sp"
+                    android:textColor="@color/ob_subtitle"
+                    android:layout_marginTop="1dp"
+                    android:lineSpacingMultiplier="1.2"/>
             </LinearLayout>
         </LinearLayout>
 
@@ -100,13 +182,13 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@color/ob_surface"
-            android:padding="16dp"
-            android:layout_marginBottom="3dp">
+            android:padding="12dp"
+            android:layout_marginBottom="2dp">
             <TextView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:text="&#128266;"
-                android:textSize="22sp"
+                android:textSize="20sp"
                 android:gravity="center"
                 android:background="@color/ob_background"/>
             <LinearLayout
@@ -114,22 +196,22 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:layout_marginStart="14dp">
+                android:layout_marginStart="12dp">
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Voice guide"
-                    android:textSize="15sp"
+                    android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/ob_headline"/>
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Turn-by-turn audio directions — tap to mute when you need quiet"
-                    android:textSize="12sp"
+                    android:textSize="11sp"
                     android:textColor="@color/ob_subtitle"
-                    android:layout_marginTop="2dp"
-                    android:lineSpacingMultiplier="1.3"/>
+                    android:layout_marginTop="1dp"
+                    android:lineSpacingMultiplier="1.2"/>
             </LinearLayout>
         </LinearLayout>
 
@@ -141,13 +223,13 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@color/ob_surface"
-            android:padding="16dp"
-            android:layout_marginBottom="3dp">
+            android:padding="12dp"
+            android:layout_marginBottom="2dp">
             <TextView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:text="&#8505;"
-                android:textSize="22sp"
+                android:textSize="20sp"
                 android:textColor="@color/ob_headline"
                 android:gravity="center"
                 android:background="@color/ob_background"/>
@@ -156,22 +238,22 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:layout_marginStart="14dp">
+                android:layout_marginStart="12dp">
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Stats &amp; info"
-                    android:textSize="15sp"
+                    android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/ob_headline"/>
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Distance, ascent and difficulty grade at a glance"
-                    android:textSize="12sp"
+                    android:textSize="11sp"
                     android:textColor="@color/ob_subtitle"
-                    android:layout_marginTop="2dp"
-                    android:lineSpacingMultiplier="1.3"/>
+                    android:layout_marginTop="1dp"
+                    android:lineSpacingMultiplier="1.2"/>
             </LinearLayout>
         </LinearLayout>
 
@@ -183,12 +265,12 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@color/ob_surface"
-            android:padding="16dp">
+            android:padding="12dp">
             <TextView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:text="&#128204;"
-                android:textSize="22sp"
+                android:textSize="20sp"
                 android:gravity="center"
                 android:background="@color/ob_background"/>
             <LinearLayout
@@ -196,22 +278,22 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:layout_marginStart="14dp">
+                android:layout_marginStart="12dp">
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Tap the map"
-                    android:textSize="15sp"
+                    android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/ob_headline"/>
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Drop pins for start and destination — the app finds the footpath between them"
-                    android:textSize="12sp"
+                    android:textSize="11sp"
                     android:textColor="@color/ob_subtitle"
-                    android:layout_marginTop="2dp"
-                    android:lineSpacingMultiplier="1.3"/>
+                    android:layout_marginTop="1dp"
+                    android:lineSpacingMultiplier="1.2"/>
             </LinearLayout>
         </LinearLayout>
 
