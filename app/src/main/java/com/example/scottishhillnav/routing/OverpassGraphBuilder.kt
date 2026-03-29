@@ -1,14 +1,20 @@
 package com.example.scottishhillnav.routing
 
+import android.util.JsonReader
+import android.util.JsonToken
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import kotlin.math.*
-import org.json.JSONObject
 
 /**
  * Downloads walking footpath data from Overpass and builds an in-memory routing Graph.
  * Used as a fallback when the bundled graph has no coverage for the selected mountain area.
+ *
+ * Response is stream-parsed with [JsonReader] so the full JSON body is never held in memory —
+ * previously [readText] + [JSONObject] tried to allocate a single String for the entire response
+ * (~130 MB for busy lowland areas), causing an OutOfMemoryError.
  */
 object OverpassGraphBuilder {
 
@@ -18,13 +24,11 @@ object OverpassGraphBuilder {
     )
 
     /**
-     * Fetches ways tagged as footway/path/track/bridleway within [radiusMeters] of the centre
+     * Fetches ways tagged as footway/path/track etc. within [radiusMeters] of the centre
      * and builds a bidirectional routing Graph suitable for A* routing.
      * Tries the primary Overpass server then a mirror. Returns null if all fail.
      */
     fun buildForArea(centerLat: Double, centerLon: Double, radiusMeters: Int = 12_000): Graph? {
-        // 20-second server-side timeout matches our HTTP read timeout — fail fast rather than
-        // making the user wait 45 seconds only to see no route appear.
         val query = "[out:json][timeout:20];" +
             "(way[\"highway\"~\"^(footway|path|track|bridleway|steps|unclassified|service|residential|tertiary|living_street|pedestrian)$\"]" +
             "(around:$radiusMeters,$centerLat,$centerLon););" +
@@ -37,52 +41,99 @@ object OverpassGraphBuilder {
             } catch (_: Exception) { continue }
             conn.setRequestProperty("User-Agent", "ScottishHillNav/1.0 (android)")
             conn.connectTimeout = 20_000
-            conn.readTimeout   = 20_000
+            conn.readTimeout   = 60_000   // large areas can take longer to transfer
 
-            val text = try {
+            try {
                 val code = conn.responseCode
                 if (code != 200) {
-                    conn.errorStream?.bufferedReader()?.readText()
-                    null
-                } else {
-                    conn.inputStream.bufferedReader().readText()
+                    conn.errorStream?.close()
+                    continue
                 }
-            } catch (_: Exception) { null }
-            finally { conn.disconnect() }
-
-            if (text != null) {
-                val graph = try { parseResponse(text) } catch (_: Exception) { null }
+                val graph = parseStream(conn.inputStream)
                 if (graph != null) return graph
+            } catch (_: Exception) {
+                // Try next endpoint
+            } finally {
+                conn.disconnect()
             }
         }
         return null
     }
 
-    private fun parseResponse(response: String): Graph? {
-        val root = JSONObject(response)
-        val elements = root.optJSONArray("elements") ?: return null
-
-        // First pass: collect OSM node coordinates and way node-ID sequences
+    /**
+     * Stream-parses the Overpass JSON response directly from [input] without buffering
+     * the full body into a String. This keeps peak memory usage proportional to the
+     * number of graph nodes/edges rather than the raw text size.
+     *
+     * Expected format:
+     * ```
+     * { "elements": [
+     *   { "type":"node", "id":123, "lat":56.0, "lon":-3.0 },
+     *   { "type":"way",  "id":456, "nodes":[123,124,125]  },
+     *   ...
+     * ]}
+     * ```
+     */
+    private fun parseStream(input: InputStream): Graph? {
         val osmNodes = HashMap<Long, Node>()
-        val ways = mutableListOf<List<Long>>()
+        val ways     = mutableListOf<LongArray>()
 
-        for (i in 0 until elements.length()) {
-            val el = elements.getJSONObject(i)
-            when (el.optString("type")) {
-                "node" -> {
-                    val id  = el.getLong("id")
-                    val lat = el.getDouble("lat")
-                    val lon = el.getDouble("lon")
-                    osmNodes[id] = Node(lat = lat, lon = lon, elevation = 0.0)
-                }
-                "way" -> {
-                    val arr = el.optJSONArray("nodes") ?: continue
-                    val ids = (0 until arr.length()).map { arr.getLong(it) }
-                    if (ids.size >= 2) ways.add(ids)
+        JsonReader(input.bufferedReader()).use { reader ->
+            reader.beginObject()
+            while (reader.hasNext()) {
+                if (reader.nextName() == "elements") {
+                    reader.beginArray()
+                    while (reader.hasNext()) {
+                        parseElement(reader, osmNodes, ways)
+                    }
+                    reader.endArray()
+                } else {
+                    reader.skipValue()
                 }
             }
+            // Don't endObject() — we may stop reading early; JsonReader.close() handles cleanup
         }
 
+        return buildGraph(osmNodes, ways)
+    }
+
+    private fun parseElement(
+        reader: JsonReader,
+        osmNodes: HashMap<Long, Node>,
+        ways: MutableList<LongArray>
+    ) {
+        var type: String? = null
+        var id:   Long    = 0L
+        var lat:  Double  = 0.0
+        var lon:  Double  = 0.0
+        var nodeRefs: LongArray? = null
+
+        reader.beginObject()
+        while (reader.hasNext()) {
+            when (reader.nextName()) {
+                "type"  -> type = reader.nextString()
+                "id"    -> id   = reader.nextLong()
+                "lat"   -> lat  = reader.nextDouble()
+                "lon"   -> lon  = reader.nextDouble()
+                "nodes" -> {
+                    val refs = mutableListOf<Long>()
+                    reader.beginArray()
+                    while (reader.hasNext()) refs.add(reader.nextLong())
+                    reader.endArray()
+                    nodeRefs = refs.toLongArray()
+                }
+                else    -> reader.skipValue()
+            }
+        }
+        reader.endObject()
+
+        when (type) {
+            "node" -> osmNodes[id] = Node(lat = lat, lon = lon, elevation = 0.0)
+            "way"  -> nodeRefs?.takeIf { it.size >= 2 }?.let { ways.add(it) }
+        }
+    }
+
+    private fun buildGraph(osmNodes: HashMap<Long, Node>, ways: List<LongArray>): Graph? {
         if (osmNodes.isEmpty() || ways.isEmpty()) return null
 
         // Map OSM Long IDs → graph Int IDs, starting high to avoid collisions with bundled graph
@@ -95,7 +146,6 @@ object OverpassGraphBuilder {
             nextId++
         }
 
-        // Build bidirectional edges using OSM way topology
         val edgeMap = HashMap<Int, MutableList<Edge>>()
         for (wayNodes in ways) {
             for (j in 0 until wayNodes.size - 1) {
