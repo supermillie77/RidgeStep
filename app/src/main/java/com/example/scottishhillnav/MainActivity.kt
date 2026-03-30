@@ -571,7 +571,7 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { openWeatherApp() }
         }
         weatherFindBtn = TextView(this).apply {
-            text = "Good areas today"
+            text = "Good walking areas \u2192"
             textSize = 15f
             setTextColor(0xFF80DEEA.toInt())
             val ph = (resources.displayMetrics.density * 14).toInt()
@@ -3238,7 +3238,7 @@ class MainActivity : AppCompatActivity() {
 
         val clearAreas = allAreas.filter { it.isGood }
         weatherFindBtn.visibility = View.VISIBLE
-        weatherFindBtn.text = if (clearAreas.isEmpty()) "No good areas today" else "Good areas today"
+        weatherFindBtn.text = if (clearAreas.isEmpty()) "No clear areas today" else "Good walking areas \u2192"
         weatherFindBtn.setOnClickListener { showWeatherAreasDialog(clearAreas) }
 
         weatherBanner.visibility = View.VISIBLE
