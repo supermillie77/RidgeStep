@@ -1,8 +1,13 @@
 package com.example.scottishhillnav.ui
 
 import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
+import android.graphics.Shader
+import android.graphics.Typeface
 import android.location.Location
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -14,29 +19,34 @@ import kotlin.math.sqrt
 
 /**
  * Draws the user's GPS position as an orange teardrop map pin matching the app icon.
- * The sharp tip points to the exact GPS coordinate; the round head sits above it.
- * A translucent orange accuracy ring surrounds the tip when GPS accuracy is meaningful.
  *
- * When [bearing] is set the pin rotates around its tip so the head points in the direction
- * of travel, matching the behaviour of Google Maps.
+ * When [bearing] is set:
+ *  - The pin rotates so the head points in the direction of travel.
+ *  - A translucent direction-cone (like Google Maps) fans out from the pin head.
+ *  - A compass-direction label (N / NE / E … NNW etc.) is drawn below the pin tip.
  */
-class LocationDotOverlay(density: Float) : Overlay() {
+class LocationDotOverlay(private val density: Float) : Overlay() {
 
     var location: Location? = null
-    /** Direction of travel in degrees (0 = north, 90 = east). Null = no bearing known. */
+    /** Direction of travel in degrees (0 = north, clockwise). Null = no bearing known. */
     var bearing: Float? = null
 
     private val pt      = android.graphics.Point()
     private val pinPath = Path()
+    private val conePath = Path()
 
     // Pin proportions — headR:tailLen ≈ 1:2.2 matches the app icon silhouette
     private val headR   = 13f * density
     private val tailLen = headR * 2.2f
-    private val innerR  = headR * 0.38f   // dark hole in the pin head
+    private val innerR  = headR * 0.38f
+
+    // Direction cone dimensions
+    private val coneLen    = headR * 4.5f   // how far the cone reaches from the head centre
+    private val coneHalfDeg = 28f           // half-angle of the cone (56° total)
 
     private val accuracyFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = 0x22FF6D00.toInt()   // translucent orange
+        color = 0x22FF6D00.toInt()
     }
     private val accuracyStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -52,11 +62,26 @@ class LocationDotOverlay(density: Float) : Overlay() {
     }
     private val pinFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = 0xFFFF6D00.toInt()   // same orange as app icon and Munro markers
+        color = 0xFFFF6D00.toInt()
     }
     private val holePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = 0xCC3A1500.toInt()   // dark brown-black hole, like the icon shadow
+        color = 0xCC3A1500.toInt()
+    }
+    // Cone: bright orange in the centre fading to transparent at the edges
+    private val conePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
+    private val labelBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = 0xCC0D1B2A.toInt()
+    }
+    private val labelTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = 0xFFFF6D00.toInt()
+        textSize = 11f * density
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
     }
 
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
@@ -67,7 +92,7 @@ class LocationDotOverlay(density: Float) : Overlay() {
         val tipX = pt.x.toFloat()
         val tipY = pt.y.toFloat()
 
-        // Accuracy ring centred on the GPS point (pin tip)
+        // Accuracy ring (drawn before rotation — it's always a circle)
         if (loc.hasAccuracy()) {
             val mpp = metersPerPixel(mapView, loc.latitude)
             val px  = (loc.accuracy / mpp).toFloat()
@@ -77,68 +102,99 @@ class LocationDotOverlay(density: Float) : Overlay() {
             }
         }
 
-        // Rotate around the pin tip to show direction of travel
         val bear = bearing
-        if (bear != null) canvas.save().also { canvas.rotate(bear, tipX, tipY) }
+        if (bear != null) {
+            canvas.save()
+            canvas.rotate(bear, tipX, tipY)
 
+            // ── Direction cone ────────────────────────────────────────────────
+            // The head centre is at (tipX, tipY - tailLen).
+            // The cone fans UPWARD from the head (which is pointing in the travel direction).
+            val hcx = tipX
+            val hcy = tipY - tailLen
+
+            // Build cone path in "pin-up" space (bearing already applied by canvas.rotate)
+            val halfRad = Math.toRadians(coneHalfDeg.toDouble()).toFloat()
+            val tipConeX = hcx
+            val tipConeY = hcy - coneLen  // cone apex above the head
+            val leftX  = hcx - coneLen * Math.sin(halfRad.toDouble()).toFloat()
+            val leftY  = hcy - coneLen * Math.cos(halfRad.toDouble()).toFloat()
+            val rightX = hcx + coneLen * Math.sin(halfRad.toDouble()).toFloat()
+            val rightY = hcy - coneLen * Math.cos(halfRad.toDouble()).toFloat()
+
+            conePath.reset()
+            conePath.moveTo(hcx, hcy)
+            conePath.lineTo(leftX, leftY)
+            conePath.lineTo(rightX, rightY)
+            conePath.close()
+
+            // Radial gradient: opaque orange at the head → transparent at the tip
+            conePaint.shader = RadialGradient(
+                hcx, hcy, coneLen,
+                intArrayOf(0xAAFF6D00.toInt(), 0x00FF6D00.toInt()),
+                floatArrayOf(0f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawPath(conePath, conePaint)
+        }
+
+        // ── Pin (drawn inside rotation block if bearing is set) ───────────────
         buildPinPath(tipX, tipY)
         canvas.drawPath(pinPath, borderPaint)
         canvas.drawPath(pinPath, pinFill)
         canvas.drawCircle(tipX, tipY - tailLen, innerR, holePaint)
 
         if (bear != null) canvas.restore()
+
+        // ── Compass label (drawn AFTER restore, in screen space) ─────────────
+        if (bear != null) {
+            val label   = bearingLabel(bear)
+            val textW   = labelTextPaint.measureText(label)
+            val padH    = 4f * density
+            val padV    = 2f * density
+            val bgLeft  = tipX - textW / 2f - padH
+            val bgRight = tipX + textW / 2f + padH
+            val bgTop   = tipY + tailLen * 0.3f
+            val bgBot   = bgTop + labelTextPaint.textSize + padV * 2f
+            val radius  = 3f * density
+            canvas.drawRoundRect(bgLeft, bgTop, bgRight, bgBot, radius, radius, labelBgPaint)
+            canvas.drawText(label, tipX, bgBot - padV, labelTextPaint)
+        }
     }
 
-    /**
-     * Builds the teardrop pin path with the sharp tip at (tipX, tipY).
-     *
-     * Geometry: the half-angle α between the pin's vertical axis and each straight
-     * side satisfies sin(α) = headR / tailLen. The two straight sides are true
-     * tangents to the circle, touching it at angles (180° − α) and α in Canvas
-     * coordinates (where 0°=right, 90°=down, 270°=up). The arc sweeps CLOCKWISE
-     * from the left tangent point over the top of the head to the right tangent
-     * point — sweep = 360° − 2α (the major arc over the top).
-     *
-     * Bug that was here before: the arc swept −240° (counterclockwise), which goes
-     * through the BOTTOM of the circle and produces an inverted bulge. The correct
-     * clockwise sweep is 360° − 2α ≈ 300° for the proportions used here.
-     */
+    /** 16-point compass label for a bearing in degrees. */
+    private fun bearingLabel(deg: Float): String {
+        val dirs = arrayOf(
+            "N","NNE","NE","ENE","E","ESE","SE","SSE",
+            "S","SSW","SW","WSW","W","WNW","NW","NNW"
+        )
+        val index = ((deg + 11.25f) / 22.5f).toInt() % 16
+        return dirs[index]
+    }
+
     private fun buildPinPath(tipX: Float, tipY: Float) {
         val cx = tipX
-        val cy = tipY - tailLen   // head centre
+        val cy = tipY - tailLen
 
-        // True tangent half-angle derived from actual dimensions (not hardcoded)
         val sinA = (headR / tailLen).coerceAtMost(1f)
         val cosA = sqrt(1f - sinA * sinA)
         val halfAngleDeg = Math.toDegrees(asin(sinA.toDouble())).toFloat()
 
-        // Canvas angles of the two tangent points on the circle:
-        //   Left  tangent: vector from centre = (−cosA, +sinA) → Canvas angle = 180° − halfAngleDeg
-        //   Right tangent: vector from centre = (+cosA, +sinA) → Canvas angle = halfAngleDeg
         val leftAngle  = 180f - halfAngleDeg
-        val rightAngle = halfAngleDeg
+        val sweepAngle = 180f + 2f * halfAngleDeg
 
-        // Tangent point coordinates
         val lx = cx - headR * cosA
         val ly = cy + headR * sinA
-
-        // Clockwise arc from left tangent, over the top, to right tangent.
-        // Clockwise sweep in Canvas = positive value.
-        // Going clockwise from leftAngle to rightAngle over the top (through 270°):
-        //   sweep = 360° − (leftAngle − rightAngle) = 360° − (180° − 2·halfAngleDeg)
-        //         = 180° + 2·halfAngleDeg
-        val sweepAngle = 180f + 2f * halfAngleDeg
 
         pinPath.reset()
         pinPath.moveTo(lx, ly)
         pinPath.arcTo(
             cx - headR, cy - headR,
             cx + headR, cy + headR,
-            leftAngle, sweepAngle, false   // clockwise over the top
+            leftAngle, sweepAngle, false
         )
-        // Arc ends at right tangent point (cx + headR·cosA, cy + headR·sinA)
-        pinPath.lineTo(tipX, tipY)   // straight line down to the tip
-        pinPath.close()              // close back to left tangent point
+        pinPath.lineTo(tipX, tipY)
+        pinPath.close()
     }
 
     private fun metersPerPixel(mapView: MapView, lat: Double): Double {
