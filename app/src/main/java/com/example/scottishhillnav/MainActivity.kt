@@ -840,6 +840,10 @@ class MainActivity : AppCompatActivity() {
             startLocationUpdates()
             return
         }
+        val perms = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
         if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION)) {
             // User previously denied — explain why before asking again
             AlertDialog.Builder(this)
@@ -852,28 +856,46 @@ class MainActivity : AppCompatActivity() {
                     "Your location is never shared or stored."
                 )
                 .setPositiveButton("Allow location") { _, _ ->
-                    ActivityCompat.requestPermissions(
-                        this,
-                        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                        LOCATION_PERMISSION_REQUEST
-                    )
+                    ActivityCompat.requestPermissions(this, perms, LOCATION_PERMISSION_REQUEST)
                 }
                 .setNegativeButton("Not now", null)
                 .show()
         } else {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                LOCATION_PERMISSION_REQUEST
-            )
+            ActivityCompat.requestPermissions(this, perms, LOCATION_PERMISSION_REQUEST)
         }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST &&
-            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode != LOCATION_PERMISSION_REQUEST) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             startLocationUpdates()
+        } else {
+            // If the system won't ask again, guide user to Settings
+            val canAskAgain = ActivityCompat.shouldShowRequestPermissionRationale(
+                this, Manifest.permission.ACCESS_FINE_LOCATION
+            )
+            if (!canAskAgain) {
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Location permission needed")
+                    .setMessage(
+                        "Location access was denied. To enable it:\n\n" +
+                        "1. Tap \"Open Settings\" below\n" +
+                        "2. Tap Permissions → Location\n" +
+                        "3. Select \"While using the app\"\n\n" +
+                        "The app works without location but the orange pin and voice guidance won't be available."
+                    )
+                    .setPositiveButton("Open Settings") { _, _ ->
+                        startActivity(
+                            Intent(
+                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                android.net.Uri.fromParts("package", packageName, null)
+                            )
+                        )
+                    }
+                    .setNegativeButton("Continue without location", null)
+                    .show()
+            }
         }
     }
 

@@ -160,7 +160,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="Tap &quot;Allow location&quot; below. On the next Android screen, choose &quot;While using the app&quot; to allow location only when RidgeStep is open."
+            android:text="Tap &quot;Allow location&quot; below. Android will ask how to share your location &#8212; choose &quot;While using the app&quot; if shown, or &quot;Allow&quot; on older devices."
             android:textSize="12sp"
             android:textColor="#FF6B35"
             android:lineSpacingMultiplier="1.4"/>
