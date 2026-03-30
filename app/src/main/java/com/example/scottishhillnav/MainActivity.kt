@@ -852,9 +852,12 @@ class MainActivity : AppCompatActivity() {
                 .setMessage(
                     "RidgeStep uses your location to:\n\n" +
                     "• Show where you are on the map\n" +
-                    "• Check local weather conditions\n" +
+                    "• Fetch local weather from Open-Meteo\n" +
                     "• Give turn-by-turn walking directions\n\n" +
-                    "Your location is never shared or stored."
+                    "Your last known position is saved locally on this device " +
+                    "so you can share it from My Log. It is sent to Open-Meteo " +
+                    "for weather and to OpenStreetMap tile servers for map imagery. " +
+                    "Nothing is sent to the app developer."
                 )
                 .setPositiveButton("Allow location") { _, _ ->
                     ActivityCompat.requestPermissions(this, perms, LOCATION_PERMISSION_REQUEST)
@@ -912,6 +915,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        map.onPause()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         compassOverlay.disableCompass()
         stopPopupUpdates()
@@ -919,6 +923,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        map.onResume()
         startLocationUpdates()
         compassOverlay.enableCompass()
     }
@@ -3055,26 +3060,39 @@ class MainActivity : AppCompatActivity() {
 
     // ── Tile pre-caching ──────────────────────────────────────────────────────
 
+    /** Set to true when the activity is destroyed; stops the prefetch loop early. */
+    @Volatile private var prefetchCancelled = false
+
     /**
-     * Downloads and caches map tiles for the 5-mile area around [lat]/[lon]
-     * at zoom levels 8–15, only when a network connection is available.
-     * Runs entirely on a background thread; safe to call from the UI thread.
+     * Caches a small number of nearby map tiles on first GPS fix.
+     *
+     * Deliberately conservative to avoid hidden data/battery use:
+     *  - 1 km radius only (was 8 km / 5 miles)
+     *  - zoom levels 12–14 only (was 8–15; zoom 15 alone at 8 km = ~576 tiles)
+     *  - hard cap of 80 tiles total
+     *  - stops immediately if the activity is destroyed
      */
     private fun preCacheTiles(lat: Double, lon: Double) {
         if (!isNetworkAvailable()) return
+        prefetchCancelled = false
         Thread {
-            val radiusM   = 8047.2   // 5 miles
-            val latDelta  = radiusM / 111320.0
-            val lonDelta  = radiusM / (111320.0 * Math.cos(Math.toRadians(lat)))
+            val radiusM  = 1000.0   // 1 km — enough to preload the immediate area
+            val latDelta = radiusM / 111320.0
+            val lonDelta = radiusM / (111320.0 * Math.cos(Math.toRadians(lat)))
             val tileProvider = map.tileProvider
-            for (zoom in 8..15) {
+            var tileCount = 0
+            val maxTiles  = 80
+            outer@ for (zoom in 12..14) {
+                if (prefetchCancelled) break
                 val minX = lonToTileX(lon - lonDelta, zoom)
                 val maxX = lonToTileX(lon + lonDelta, zoom)
                 val minY = latToTileY(lat + latDelta, zoom)
                 val maxY = latToTileY(lat - latDelta, zoom)
                 for (x in minX..maxX) {
                     for (y in minY..maxY) {
+                        if (prefetchCancelled || tileCount >= maxTiles) break@outer
                         tileProvider.getMapTile(MapTileIndex.getTileIndex(zoom, x, y))
+                        tileCount++
                     }
                 }
             }
@@ -3299,6 +3317,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        prefetchCancelled = true
         voiceNavigator.shutdown()
     }
 

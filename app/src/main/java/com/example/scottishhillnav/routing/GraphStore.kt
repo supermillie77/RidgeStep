@@ -23,11 +23,11 @@ object GraphStore {
         cached?.let { return it }
         synchronized(this) {
             cached?.let { return it }
-            Log.e(TAG, "GRAPHSTORE_LOAD_BASE")
+            Log.d(TAG, "GRAPHSTORE_LOAD_BASE")
             val nodes = readNodesFromAssetsAuto(context, "scotland_pack/nodes.bin")
-            Log.e(TAG, "Loaded ${nodes.size} nodes")
+            Log.d(TAG, "Loaded ${nodes.size} nodes")
             val edges = readEdgesFromAssets(context, "scotland_pack/edges.bin")
-            Log.e(TAG, "Loaded ${edges.size} edge lists")
+            Log.d(TAG, "Loaded ${edges.size} edge lists")
             return Graph(nodes = nodes, edges = edges)
         }
     }
@@ -78,7 +78,7 @@ object GraphStore {
                     routeSequenceKey = "lomond_ptarmigan"
                 ))
 
-            Log.e(TAG, "Landmarks: ${graph.landmarks.keys.sorted().joinToString()}")
+            Log.d(TAG, "Landmarks: ${graph.landmarks.keys.sorted().joinToString()}")
             cached = graph
             return graph
         }
@@ -124,7 +124,7 @@ object GraphStore {
             )
         }
 
-        Log.e(TAG, "nodes.bin format=$format count=$count bytesPerNode=$bytesPerNode")
+        Log.d(TAG, "nodes.bin format=$format count=$count bytesPerNode=$bytesPerNode")
 
         // Size for 0.75 load factor — avoids any rehash during population
         val nodes = HashMap<Int, Node>((count * 4 + 2) / 3)

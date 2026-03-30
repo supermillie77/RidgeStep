@@ -18,6 +18,10 @@ import org.osmdroid.views.overlay.Overlay
  * no tap-interception overhead.
  *
  * Triangles visible from zoom 7. Labels at zoom ≥ 11.
+ *
+ * Performance notes:
+ *  - Off-screen summits are skipped before any path/text work.
+ *  - Label text widths are cached by name so measureText() is called at most once per hill.
  */
 class SummitOverlay(density: Float) : Overlay() {
 
@@ -41,6 +45,10 @@ class SummitOverlay(density: Float) : Overlay() {
     private val path = Path()
     private val pt   = android.graphics.Point()
 
+    // Label-width cache: avoids repeated measureText() calls for the same hill name.
+    // Cleared when the hill list changes (density changes are not expected at runtime).
+    private val labelWidthCache = HashMap<String, Float>()
+
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
         if (shadow) return
 
@@ -58,12 +66,20 @@ class SummitOverlay(density: Float) : Overlay() {
             else         ->  5f * density
         }
 
+        // Screen bounds for culling — inflate by the worst-case triangle+label size
+        val margin = (r + labelPaint.textSize + 8f * density).toInt()
+        val screenW = canvas.width
+        val screenH = canvas.height
+
         val projection = mapView.projection
 
         for (hill in hills) {
             projection.toPixels(GeoPoint(hill.summitLat, hill.summitLon), pt)
             val x = pt.x.toFloat()
             val y = pt.y.toFloat()
+
+            // Skip summits that are completely off-screen
+            if (x < -margin || x > screenW + margin || y < -margin || y > screenH + margin) continue
 
             // Equilateral triangle, apex pointing up, circumradius = r
             path.reset()
@@ -77,7 +93,7 @@ class SummitOverlay(density: Float) : Overlay() {
             canvas.drawPath(path, outlinePaint)
 
             if (showLabels) {
-                val tw = labelPaint.measureText(hill.name)
+                val tw = labelWidthCache.getOrPut(hill.name) { labelPaint.measureText(hill.name) }
                 canvas.drawText(hill.name, x - tw / 2f,
                     y - r - 4f * density, labelPaint)
             }

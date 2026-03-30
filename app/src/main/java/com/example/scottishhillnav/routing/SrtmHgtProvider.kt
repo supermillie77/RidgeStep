@@ -42,6 +42,9 @@ class SrtmHgtProvider(
         val raf: RandomAccessFile
     )
 
+    // Tracks tile keys known to be absent so the "missing tile" warning fires only once per key.
+    private val missingTiles = HashSet<TileKey>()
+
     private val cache = object : LinkedHashMap<TileKey, Tile>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<TileKey, Tile>?): Boolean {
             if (size <= 6) return false
@@ -96,8 +99,9 @@ class SrtmHgtProvider(
         val fileName = buildTileName(latDeg, lonDeg)
         val file = File(demDir, fileName)
         if (!file.exists()) {
-            // Log once in a while but don't spam on every call
-            Log.w(TAG, "Missing DEM tile: ${file.absolutePath}")
+            if (missingTiles.add(key)) {   // log only the first time we discover this tile is absent
+                Log.w(TAG, "Missing DEM tile: ${file.absolutePath}")
+            }
             return null
         }
 

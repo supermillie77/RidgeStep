@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.Point
 import com.example.scottishhillnav.routing.Graph
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -23,6 +24,9 @@ class RouteGradientOverlay(private val graphSupplier: () -> Graph) : Overlay() {
 
     private var activeNodeIds: List<Int> = emptyList()
     private var inactiveRoutes: List<List<Int>> = emptyList()
+
+    // Per-segment colours precomputed in setRoute() so draw() does projection + paint only.
+    private var segmentColors: IntArray = IntArray(0)
 
     // Gradient paint for the active route (color set per segment)
     private val gradientPaint = Paint().apply {
@@ -52,8 +56,18 @@ class RouteGradientOverlay(private val graphSupplier: () -> Graph) : Overlay() {
         pathEffect  = DashPathEffect(floatArrayOf(4f, 8f), 0f)
     }
 
+    // Reusable pixel points — avoids allocating new Point objects per segment per frame
+    private val p1 = Point()
+    private val p2 = Point()
+
     fun setRoute(nodeIds: List<Int>) {
         activeNodeIds = nodeIds
+        // Precompute per-segment slope colours once here (O(n) haversine + moving average).
+        // draw() then only does projection + paint — no repeated computation per frame.
+        val g = graph
+        segmentColors = if (nodeIds.size < 2) IntArray(0) else {
+            IntArray(nodeIds.size - 1) { i -> slopeToColor(smoothedSlope(nodeIds, i, g)) }
+        }
     }
 
     fun setInactiveRoutes(routes: List<List<Int>>) {
@@ -63,6 +77,7 @@ class RouteGradientOverlay(private val graphSupplier: () -> Graph) : Overlay() {
     fun clear() {
         activeNodeIds  = emptyList()
         inactiveRoutes = emptyList()
+        segmentColors  = IntArray(0)
     }
 
     override fun draw(c: Canvas, mapView: MapView, shadow: Boolean) {
@@ -75,45 +90,45 @@ class RouteGradientOverlay(private val graphSupplier: () -> Graph) : Overlay() {
             for (i in 0 until route.size - 1) {
                 val a = graph.nodes[route[i]]     ?: continue
                 val b = graph.nodes[route[i + 1]] ?: continue
-                val p1 = proj.toPixels(GeoPoint(a.lat, a.lon), null)
-                val p2 = proj.toPixels(GeoPoint(b.lat, b.lon), null)
+                proj.toPixels(GeoPoint(a.lat, a.lon), p1)
+                proj.toPixels(GeoPoint(b.lat, b.lon), p2)
                 c.drawLine(p1.x.toFloat(), p1.y.toFloat(), p2.x.toFloat(), p2.y.toFloat(), casingPaint)
                 c.drawLine(p1.x.toFloat(), p1.y.toFloat(), p2.x.toFloat(), p2.y.toFloat(), dotPaint)
             }
         }
 
-        // Draw active route on top with slope-gradient colouring
-        if (activeNodeIds.size < 2) return
-        for (i in 0 until activeNodeIds.size - 1) {
-            val a = graph.nodes[activeNodeIds[i]]     ?: continue
-            val b = graph.nodes[activeNodeIds[i + 1]] ?: continue
-
-            gradientPaint.color = slopeToColor(smoothedSlope(activeNodeIds, i))
-
-            val p1 = proj.toPixels(GeoPoint(a.lat, a.lon), null)
-            val p2 = proj.toPixels(GeoPoint(b.lat, b.lon), null)
+        // Draw active route with precomputed slope-gradient colouring
+        val ids    = activeNodeIds
+        val colors = segmentColors
+        if (ids.size < 2 || colors.size < ids.size - 1) return
+        for (i in 0 until ids.size - 1) {
+            val a = graph.nodes[ids[i]]     ?: continue
+            val b = graph.nodes[ids[i + 1]] ?: continue
+            gradientPaint.color = colors[i]
+            proj.toPixels(GeoPoint(a.lat, a.lon), p1)
+            proj.toPixels(GeoPoint(b.lat, b.lon), p2)
             c.drawLine(p1.x.toFloat(), p1.y.toFloat(), p2.x.toFloat(), p2.y.toFloat(), gradientPaint)
         }
     }
 
-    private fun smoothedSlope(ids: List<Int>, index: Int): Double {
+    // ── Precomputation helpers — called from setRoute(), never from draw() ───
+
+    private fun smoothedSlope(ids: List<Int>, index: Int, g: Graph): Double {
         val window    = 12
         val endIndex  = (index + window).coerceAtMost(ids.size - 1)
-        val startNode = graph.nodes[ids[index]]    ?: return 0.0
-        val endNode   = graph.nodes[ids[endIndex]] ?: return 0.0
-        val startElev = avgElev(ids, index,    window)
-        val endElev   = avgElev(ids, endIndex, window)
+        val startNode = g.nodes[ids[index]]    ?: return 0.0
+        val endNode   = g.nodes[ids[endIndex]] ?: return 0.0
+        val startElev = avgElev(ids, index,    window, g)
+        val endElev   = avgElev(ids, endIndex, window, g)
         val dist      = haversine(startNode.lat, startNode.lon, endNode.lat, endNode.lon)
         if (dist == 0.0) return 0.0
         return min(abs(endElev - startElev) / dist * 100.0, 35.0)
     }
 
-    private fun avgElev(ids: List<Int>, centre: Int, radius: Int): Double {
+    private fun avgElev(ids: List<Int>, centre: Int, radius: Int, g: Graph): Double {
         var sum = 0.0; var count = 0
         for (i in (centre - radius).coerceAtLeast(0)..(centre + radius).coerceAtMost(ids.size - 1)) {
-            val node = graph.nodes[ids[i]] ?: continue
-            // Elevation is pre-populated by enrichRouteElevations() on the routing thread.
-            // Never do file I/O here — draw() runs on the UI thread.
+            val node = g.nodes[ids[i]] ?: continue
             sum += node.elevation
             count++
         }

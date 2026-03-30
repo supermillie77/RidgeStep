@@ -16,6 +16,22 @@ object HillRepository {
     var hills: List<Hill> = legacyHills()
         private set
 
+    // Precomputed lookup structures — rebuilt whenever [hills] is replaced.
+    // Avoids repeated O(n) scans for common operations.
+    @Volatile private var byIdMap:       Map<String, Hill>         = emptyMap()
+    @Volatile private var byNameMap:     Map<String, List<Hill>>   = emptyMap()
+    @Volatile private var duplicateNames: Set<String>              = emptySet()
+    @Volatile private var sortedUniqueNames: List<String>          = emptyList()
+
+    init { rebuildIndexes(hills) }
+
+    private fun rebuildIndexes(list: List<Hill>) {
+        byIdMap          = list.associateBy { it.id }
+        byNameMap        = list.groupBy { it.name }
+        duplicateNames   = byNameMap.filter { it.value.size > 1 }.keys.toHashSet()
+        sortedUniqueNames = byNameMap.keys.sorted()
+    }
+
     /**
      * Parses assets/hills.csv and populates [hills].
      * CSV format: id,name,category,area,lat,lon,elevation
@@ -48,7 +64,8 @@ object HillRepository {
             }
             if (loaded.isNotEmpty()) {
                 hills = loaded
-                Log.e(TAG, "Loaded ${loaded.size} hills from hills.csv")
+                rebuildIndexes(loaded)
+                Log.i(TAG, "Loaded ${loaded.size} hills from hills.csv")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load hills.csv — using legacy list", e)
@@ -59,18 +76,16 @@ object HillRepository {
      * Returns the display label for a hill.
      * Unique names show just the name; duplicate names include the area in brackets.
      */
-    fun displayLabel(hill: Hill): String {
-        val count = hills.count { it.name == hill.name }
-        return if (count > 1) "${hill.name} (${hill.area})" else hill.name
-    }
+    fun displayLabel(hill: Hill): String =
+        if (hill.name in duplicateNames) "${hill.name} (${hill.area})" else hill.name
 
     /** All unique hill names in alphabetical order (for first-level selection). */
-    fun uniqueNames(): List<String> = hills.map { it.name }.distinct().sorted()
+    fun uniqueNames(): List<String> = sortedUniqueNames
 
     /** All hills with a given name (for disambiguation). */
-    fun byName(name: String): List<Hill> = hills.filter { it.name == name }
+    fun byName(name: String): List<Hill> = byNameMap[name] ?: emptyList()
 
-    fun byId(id: String): Hill? = hills.find { it.id == id }
+    fun byId(id: String): Hill? = byIdMap[id]
 
     /** Hardcoded fallback list (used before CSV loads). */
     private fun legacyHills(): List<Hill> = listOf(

@@ -1,6 +1,7 @@
 // app/src/main/java/com/example/scottishhillnav/routing/Graph.kt
 package com.example.scottishhillnav.routing
 
+import java.util.PriorityQueue
 import kotlin.math.pow
 
 data class Node(
@@ -86,12 +87,16 @@ class Graph(
             return candidates.take(k).map { it.id }
         }
 
-        // Fallback: full linear scan (only for very sparse/remote graph areas)
-        return nodes.entries
-            .map { (id, n) -> id to ((n.lat - lat).pow(2) + (n.lon - lon).pow(2)) }
-            .sortedBy { it.second }
-            .take(k)
-            .map { it.first }
+        // Fallback: full linear scan with bounded top-k via max-heap.
+        // Avoids sorting the entire node set (O(n log n)) — O(n log k) instead.
+        // Max-heap ordered by descending distance so we can efficiently evict the worst.
+        val heap = PriorityQueue<Pair<Int, Double>>(k + 1, compareByDescending { it.second })
+        for ((id, n) in nodes) {
+            val d = (n.lat - lat).pow(2) + (n.lon - lon).pow(2)
+            heap.add(id to d)
+            if (heap.size > k) heap.poll()   // drop the farthest candidate
+        }
+        return heap.sortedBy { it.second }.map { it.first }
     }
 
     fun landmarkId(key: String): Int? = landmarks[key]

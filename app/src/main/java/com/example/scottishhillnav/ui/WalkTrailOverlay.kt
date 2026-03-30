@@ -10,8 +10,17 @@ import org.osmdroid.views.overlay.Overlay
 /**
  * Records the user's GPS path and draws it as a semi-transparent orange trail.
  * Points are added via [addPoint]; call [clear] when a new walk begins.
+ *
+ * Memory safety: the list is capped at [MAX_POINTS]. When the cap is reached every
+ * other point is removed (stride-2 decimation), keeping the overall shape while
+ * halving memory and draw cost. This repeats as many times as needed, so a very long
+ * walk never grows beyond ~2× MAX_POINTS before the next decimation pass.
  */
 class WalkTrailOverlay : Overlay() {
+
+    companion object {
+        private const val MAX_POINTS = 2_000
+    }
 
     private val points = mutableListOf<GeoPoint>()
     private val pt     = android.graphics.Point()
@@ -35,6 +44,7 @@ class WalkTrailOverlay : Overlay() {
             if (haversine(last.latitude, last.longitude, lat, lon) < 3.0) return
         }
         points.add(GeoPoint(lat, lon))
+        if (points.size > MAX_POINTS) decimateInPlace()
     }
 
     fun clear() = points.clear()
@@ -52,6 +62,15 @@ class WalkTrailOverlay : Overlay() {
         }
         canvas.drawPath(path, shadowPaint)
         canvas.drawPath(path, trailPaint)
+    }
+
+    /** Removes every other point (stride-2 decimation), halving the list in-place. */
+    private fun decimateInPlace() {
+        val kept = ArrayList<GeoPoint>((points.size + 1) / 2)
+        var i = 0
+        while (i < points.size) { kept.add(points[i]); i += 2 }
+        points.clear()
+        points.addAll(kept)
     }
 
     private fun haversine(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
