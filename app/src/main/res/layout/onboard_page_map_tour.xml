@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Page 6: Your controls — clean reference, dark theme -->
+<!-- Page 6: Your controls — full reference of every map button and gesture -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/ob_background">
 
-    <!-- Header (18%) -->
+    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="18"
+        android:layout_height="wrap_content"
         android:orientation="vertical"
         android:paddingStart="28dp"
         android:paddingEnd="28dp"
-        android:paddingTop="24dp">
+        android:paddingTop="24dp"
+        android:paddingBottom="12dp">
 
         <View
             android:layout_width="32dp"
@@ -33,7 +33,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Six buttons — expand on first use, then tuck to icons"
+            android:text="Nine buttons plus gestures — expand on first use, then tuck to icons"
             android:textSize="12sp"
             android:textColor="@color/ob_subtitle"
             android:layout_marginTop="4dp"
@@ -41,261 +41,424 @@
 
     </LinearLayout>
 
-    <!-- Controls list (82%) -->
-    <LinearLayout
+    <!-- Scrollable controls list -->
+    <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="82"
-        android:orientation="vertical"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp"
-        android:paddingBottom="12dp">
+        android:layout_weight="1"
+        android:fadingEdgeLength="12dp"
+        android:requiresFadingEdge="vertical">
 
-        <!-- Find a hill -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@color/ob_surface"
-            android:padding="12dp"
-            android:layout_marginBottom="2dp">
-            <ImageView
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@android:drawable/ic_menu_search"
-                android:padding="8dp"
-                android:background="@color/ob_background"
-                android:contentDescription="Find a hill"/>
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="20dp">
+
+            <!-- Find a hill -->
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="12dp">
-                <TextView
-                    android:layout_width="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp"
+                android:layout_marginBottom="2dp">
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@android:drawable/ic_menu_search"
+                    android:padding="8dp"
+                    android:background="@color/ob_background"
+                    android:contentDescription="Find a hill"/>
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="Find a hill"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/ob_headline"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Search any summit, pick a car park and get a real footpath route"
-                    android:textSize="11sp"
-                    android:textColor="@color/ob_subtitle"
-                    android:layout_marginTop="1dp"
-                    android:lineSpacingMultiplier="1.2"/>
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Find a hill  (bottom-right)"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Search any summit, pick a car park and get a real footpath route"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
             </LinearLayout>
+
+            <!-- Hills near me -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp"
+                android:layout_marginBottom="2dp">
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@android:drawable/ic_menu_agenda"
+                    android:padding="8dp"
+                    android:background="@color/ob_background"
+                    android:contentDescription="Hills near me"/>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Hills near me  (bottom-left)"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Closest summits and walks &amp; places within 5–25 miles, with time estimates"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- My log -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp"
+                android:layout_marginBottom="2dp">
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@android:drawable/ic_menu_agenda"
+                    android:padding="8dp"
+                    android:background="@color/ob_background"
+                    android:contentDescription="My log"/>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="My log  (bottom-left)"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Track your completed summits with progress bars per category (Munros, Corbetts, etc.) and share your location"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Re-centre -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp"
+                android:layout_marginBottom="2dp">
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@drawable/ic_my_location"
+                    android:padding="8dp"
+                    android:background="@color/ob_background"
+                    android:contentDescription="Re-centre map"/>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Re-centre map  (bottom-left)"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Appears when you pan away — tap to snap the map back to your GPS position"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Voice guide -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp"
+                android:layout_marginBottom="2dp">
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@android:drawable/ic_lock_silent_mode_off"
+                    android:padding="8dp"
+                    android:background="@color/ob_background"
+                    android:contentDescription="Voice guide"/>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Voice guide  (bottom-right)"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Turn-by-turn audio directions — tap to mute or unmute"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Stats & info -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp"
+                android:layout_marginBottom="2dp">
+                <ImageView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:src="@android:drawable/ic_menu_info_details"
+                    android:padding="8dp"
+                    android:background="@color/ob_background"
+                    android:contentDescription="Stats and info"/>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Stats &amp; info  (bottom-right)"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Distance, ascent, difficulty grade and live navigation stats"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Compass -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp"
+                android:layout_marginBottom="2dp">
+                <TextView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:text="&#x1F9ED;"
+                    android:textSize="22sp"
+                    android:gravity="center"
+                    android:background="@color/ob_background"/>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Compass  (top-left)"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Live magnetic compass — always shows which way is north"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Orange pin -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp"
+                android:layout_marginBottom="2dp">
+                <TextView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:text="&#128205;"
+                    android:textSize="22sp"
+                    android:gravity="center"
+                    android:background="@color/ob_background"/>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Your location pin"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Orange teardrop pin shows your GPS position. When moving it rotates to face your direction of travel and shows a direction cone and compass label (N, NE, E…)"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Long-press summit -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp"
+                android:layout_marginBottom="2dp">
+                <TextView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:text="&#9651;"
+                    android:textSize="22sp"
+                    android:textColor="#FF6D00"
+                    android:gravity="center"
+                    android:background="@color/ob_background"/>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Long-press a summit"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Shows summit info: elevation, distance from you, estimated time. Tap &#8220;Mark as climbed&#8221; to add it to your log"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Tap the map -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp">
+                <TextView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:text="&#128204;"
+                    android:textSize="20sp"
+                    android:gravity="center"
+                    android:background="@color/ob_background"/>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Tap the map"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Drop pins for start and destination — the app finds the footpath between them"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
+            </LinearLayout>
+
         </LinearLayout>
 
-        <!-- Hills near me -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@color/ob_surface"
-            android:padding="12dp"
-            android:layout_marginBottom="2dp">
-            <ImageView
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@android:drawable/ic_menu_agenda"
-                android:padding="8dp"
-                android:background="@color/ob_background"
-                android:contentDescription="Hills near me"/>
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="12dp">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Hills near me"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/ob_headline"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="See the closest summits to your location with distance and time estimates"
-                    android:textSize="11sp"
-                    android:textColor="@color/ob_subtitle"
-                    android:layout_marginTop="1dp"
-                    android:lineSpacingMultiplier="1.2"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Re-centre -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@color/ob_surface"
-            android:padding="12dp"
-            android:layout_marginBottom="2dp">
-            <ImageView
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@drawable/ic_my_location"
-                android:padding="8dp"
-                android:background="@color/ob_background"
-                android:contentDescription="Re-centre map"/>
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="12dp">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Re-centre map"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/ob_headline"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Jump the map back to your GPS position at any time"
-                    android:textSize="11sp"
-                    android:textColor="@color/ob_subtitle"
-                    android:layout_marginTop="1dp"
-                    android:lineSpacingMultiplier="1.2"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Voice guide -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@color/ob_surface"
-            android:padding="12dp"
-            android:layout_marginBottom="2dp">
-            <ImageView
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@android:drawable/ic_lock_silent_mode_off"
-                android:padding="8dp"
-                android:background="@color/ob_background"
-                android:contentDescription="Voice guide"/>
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="12dp">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Voice guide"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/ob_headline"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Turn-by-turn audio directions — tap to mute when you need quiet"
-                    android:textSize="11sp"
-                    android:textColor="@color/ob_subtitle"
-                    android:layout_marginTop="1dp"
-                    android:lineSpacingMultiplier="1.2"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Stats & info -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@color/ob_surface"
-            android:padding="12dp"
-            android:layout_marginBottom="2dp">
-            <ImageView
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@android:drawable/ic_menu_info_details"
-                android:padding="8dp"
-                android:background="@color/ob_background"
-                android:contentDescription="Stats and info"/>
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="12dp">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Stats &amp; info"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/ob_headline"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Distance, ascent and difficulty grade at a glance"
-                    android:textSize="11sp"
-                    android:textColor="@color/ob_subtitle"
-                    android:layout_marginTop="1dp"
-                    android:lineSpacingMultiplier="1.2"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Tap the map -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@color/ob_surface"
-            android:padding="12dp">
-            <TextView
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:text="&#128204;"
-                android:textSize="20sp"
-                android:gravity="center"
-                android:background="@color/ob_background"/>
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="12dp">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Tap the map"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/ob_headline"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Drop pins for start and destination — the app finds the footpath between them"
-                    android:textSize="11sp"
-                    android:textColor="@color/ob_subtitle"
-                    android:layout_marginTop="1dp"
-                    android:lineSpacingMultiplier="1.2"/>
-            </LinearLayout>
-        </LinearLayout>
-
-    </LinearLayout>
+    </ScrollView>
 
 </LinearLayout>
