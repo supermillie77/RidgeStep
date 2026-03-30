@@ -301,7 +301,7 @@ class MainActivity : AppCompatActivity() {
         // ── Map ──────────────────────────────────────────────────────────────
         map = MapView(this).apply {
             setMultiTouchControls(true)
-            setBuiltInZoomControls(true)
+            @Suppress("DEPRECATION") setBuiltInZoomControls(true)
             val topoSource = object : OnlineTileSourceBase(
                 "OpenTopoMap", 0, 17, 256, ".png",
                 arrayOf(
@@ -3249,13 +3249,7 @@ class MainActivity : AppCompatActivity() {
     private fun openWeatherApp() {
         val loc = lastLocation
 
-        // 1. Try to open a dedicated weather app via a geo intent
-        if (loc != null) {
-            val geoUri = Uri.parse("geo:${loc.latitude},${loc.longitude}?q=${loc.latitude},${loc.longitude}(My+Location)")
-            val geoIntent = Intent(Intent.ACTION_VIEW, geoUri)
-            // Some weather apps register for geo intents — but most don't.
-            // So instead open BBC Weather directly for the nearest location.
-        }
+        // Open BBC Weather directly — most weather apps don't register geo intents.
 
         // 2. BBC Weather search for current coordinates (works in any browser)
         val lat = loc?.latitude

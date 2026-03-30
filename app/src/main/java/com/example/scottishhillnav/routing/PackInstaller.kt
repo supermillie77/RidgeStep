@@ -5,7 +5,7 @@ import android.content.Context
 
 object PackInstaller {
 
-    fun ensurePackInstalled(context: Context) {
+    fun ensurePackInstalled(@Suppress("UNUSED_PARAMETER") context: Context) {
         throw IllegalStateException("PACKINSTALLER_EXECUTED_MARKER_20260219")
     }
 }

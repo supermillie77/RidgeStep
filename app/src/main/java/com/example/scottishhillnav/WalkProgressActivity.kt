@@ -185,46 +185,24 @@ class WalkProgressActivity : AppCompatActivity() {
         row.addView(countView)
         card.addView(row)
 
-        // Progress bar
-        val barBg = View(this).apply {
-            setBackgroundColor(0xFF1E3347.toInt())
+        // Progress bar — single view draws background + fill together
+        val barContainer = object : View(this) {
+            val bgPaint   = Paint().apply { color = 0xFF1E3347.toInt() }
+            val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = SummitOverlay.categoryColor(category)
+            }
+            override fun onDraw(c: Canvas) {
+                val h = height.toFloat()
+                c.drawRoundRect(RectF(0f, 0f, width.toFloat(), h), h / 2, h / 2, bgPaint)
+                if (done > 0 && total > 0) {
+                    val fw = width.toFloat() * done.toFloat() / total.toFloat()
+                    c.drawRoundRect(RectF(0f, 0f, fw, h), h / 2, h / 2, fillPaint)
+                }
+            }
         }
-        card.addView(barBg, LinearLayout.LayoutParams(
+        card.addView(barContainer, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, (6 * dp).toInt()
         ).also { it.topMargin = (8 * dp).toInt() })
-
-        // Fill — custom view
-        if (done > 0 && total > 0) {
-            val fillView = object : View(this) {
-                val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = SummitOverlay.categoryColor(category)
-                }
-                override fun onDraw(c: Canvas) {
-                    val w = width.toFloat() * done / total
-                    c.drawRoundRect(RectF(0f, 0f, w, height.toFloat()), height / 2f, height / 2f, fillPaint)
-                }
-            }
-            // We need to overlay the fill onto barBg; instead just replace it
-            // Use a dedicated container
-            card.removeView(barBg)
-            val barContainer = object : View(this) {
-                val bgPaint   = Paint().apply { color = 0xFF1E3347.toInt() }
-                val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = SummitOverlay.categoryColor(category)
-                }
-                override fun onDraw(c: Canvas) {
-                    val h = height.toFloat()
-                    c.drawRoundRect(RectF(0f, 0f, width.toFloat(), h), h/2, h/2, bgPaint)
-                    val fw = width.toFloat() * done.toFloat() / total.toFloat()
-                    if (fw > 0) c.drawRoundRect(RectF(0f, 0f, fw, h), h/2, h/2, fillPaint)
-                }
-            }
-            card.addView(barContainer, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, (6 * dp).toInt()
-            ).also { it.topMargin = (8 * dp).toInt() })
-        } else {
-            // No fill needed — just remove placeholder
-        }
 
         // Bottom margin between cards
         val params = LinearLayout.LayoutParams(

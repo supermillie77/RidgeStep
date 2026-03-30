@@ -250,7 +250,7 @@ class GpxRouteImporter(
                     XmlPullParser.END_TAG -> {
                         if (parser.name == "trkpt") {
                             if (lat != null && lon != null) {
-                                points.add(TrackPoint(lat!!, lon!!, ele))
+                                points.add(TrackPoint(lat, lon, ele))
                             }
                             lat = null
                             lon = null

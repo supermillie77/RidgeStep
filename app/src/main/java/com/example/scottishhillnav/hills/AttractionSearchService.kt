@@ -118,7 +118,7 @@ object AttractionSearchService {
                 "tags"   -> {
                     jr.beginObject()
                     while (jr.hasNext()) {
-                        when (val key = jr.nextName()) {
+                        when (jr.nextName()) {
                             "name"    -> name = jr.nextString()
                             "waterway", "natural", "historic", "tourism", "leisure" -> {
                                 val v = jr.nextString()
