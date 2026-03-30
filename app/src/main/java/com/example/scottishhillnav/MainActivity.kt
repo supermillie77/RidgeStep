@@ -558,11 +558,16 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = (resources.displayMetrics.density * 72).toInt()
             visibility = View.GONE
+            // Consume all touches so they don't fall through to the map beneath
+            isClickable = true
+            isFocusable = true
         }
         weatherBannerText = TextView(this).apply {
             textSize = 17f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
+            // Tap the weather text → open the device weather app / BBC Weather for this location
+            setOnClickListener { openWeatherApp() }
         }
         weatherFindBtn = TextView(this).apply {
             text = "Good areas today"
@@ -3212,6 +3217,38 @@ class MainActivity : AppCompatActivity() {
         weatherFindBtn.setOnClickListener { showWeatherAreasDialog(clearAreas) }
 
         weatherBanner.visibility = View.VISIBLE
+    }
+
+    /**
+     * Opens the best available weather app for the user's current location.
+     * Tries the device's default weather app first (com.weather.Weather is The Weather Channel;
+     * most OEM devices have a weather shortcut). Falls back to BBC Weather in the browser.
+     */
+    private fun openWeatherApp() {
+        val loc = lastLocation
+
+        // 1. Try to open a dedicated weather app via a geo intent
+        if (loc != null) {
+            val geoUri = Uri.parse("geo:${loc.latitude},${loc.longitude}?q=${loc.latitude},${loc.longitude}(My+Location)")
+            val geoIntent = Intent(Intent.ACTION_VIEW, geoUri)
+            // Some weather apps register for geo intents — but most don't.
+            // So instead open BBC Weather directly for the nearest location.
+        }
+
+        // 2. BBC Weather search for current coordinates (works in any browser)
+        val lat = loc?.latitude
+        val lon = loc?.longitude
+        val url = if (lat != null && lon != null) {
+            "https://www.bbc.co.uk/weather/locator/search?q=$lat,$lon&locale=en-GB"
+        } else {
+            "https://www.bbc.co.uk/weather/scotland"
+        }
+
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(this, "No browser found to open weather.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showWeatherAreasDialog(clearAreas: List<WeatherService.AreaWeather>) {

@@ -96,32 +96,24 @@ class OnboardingActivity : AppCompatActivity() {
     private fun requestLocationPermission() {
         val permission = Manifest.permission.ACCESS_FINE_LOCATION
 
-        // Already granted
+        // Already granted — go straight to the app
         if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
             done(); return
         }
 
-        // Previously asked and user denied (but can ask again)
-        if (ActivityCompat.shouldShowRequestPermissionRationale(this, permission)) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(permission, Manifest.permission.ACCESS_COARSE_LOCATION),
-                LOCATION_PERM_REQUEST
-            )
-            return
-        }
-
-        // Check if we have previously asked (permanently denied case)
-        val alreadyAsked = getSharedPreferences("app_state", MODE_PRIVATE)
-            .getBoolean("asked_location_perm", false)
-
-        if (alreadyAsked) {
-            // Permission was permanently denied — send user to app settings
+        // shouldShowRequestPermissionRationale returns true only if the user already denied
+        // once and hasn't ticked "Don't ask again". In that case, and for first-time asks,
+        // just show the system dialog. Android will show "While using the app / Only this time /
+        // Don't allow" as long as ACCESS_COARSE_LOCATION is also declared in the manifest.
+        if (!ActivityCompat.shouldShowRequestPermissionRationale(this, permission) &&
+            getSharedPreferences("app_state", MODE_PRIVATE).getBoolean("perm_denied_final", false)
+        ) {
+            // Permanently denied — guide user to Settings
             AlertDialog.Builder(this)
                 .setTitle("Location permission required")
                 .setMessage(
-                    "You previously denied location access. Please open Settings, " +
-                    "tap Permissions → Location, and select \"Allow only while using the app\"."
+                    "Location access was denied. Please open Settings → Permissions → Location " +
+                    "and select \"While using the app\"."
                 )
                 .setPositiveButton("Open Settings") { _, _ ->
                     startActivity(
@@ -130,18 +122,16 @@ class OnboardingActivity : AppCompatActivity() {
                     )
                     done()
                 }
-                .setNegativeButton("Maybe later") { _, _ -> done() }
+                .setNegativeButton("Skip") { _, _ -> done() }
                 .show()
-        } else {
-            // First time asking
-            getSharedPreferences("app_state", MODE_PRIVATE)
-                .edit().putBoolean("asked_location_perm", true).apply()
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(permission, Manifest.permission.ACCESS_COARSE_LOCATION),
-                LOCATION_PERM_REQUEST
-            )
+            return
         }
+
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(permission, Manifest.permission.ACCESS_COARSE_LOCATION),
+            LOCATION_PERM_REQUEST
+        )
     }
 
     override fun onRequestPermissionsResult(
@@ -151,7 +141,17 @@ class OnboardingActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == LOCATION_PERM_REQUEST) {
-            // Proceed regardless of result — MainActivity handles the denied case gracefully
+            val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                // If the user denied AND the system won't ask again, record permanent denial
+                val canAskAgain = ActivityCompat.shouldShowRequestPermissionRationale(
+                    this, Manifest.permission.ACCESS_FINE_LOCATION
+                )
+                if (!canAskAgain) {
+                    getSharedPreferences("app_state", MODE_PRIVATE)
+                        .edit().putBoolean("perm_denied_final", true).apply()
+                }
+            }
             done()
         }
     }
