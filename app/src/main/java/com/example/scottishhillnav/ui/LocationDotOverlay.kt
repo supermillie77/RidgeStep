@@ -107,16 +107,18 @@ class LocationDotOverlay(private val density: Float) : Overlay() {
             canvas.rotate(bear + 180f, tipX, tipY)
 
             // ── Direction cone from the tip ───────────────────────────────────
-            // In this rotated canvas the tip (forward direction) points upward (negative Y).
-            // The cone fans upward from the tip apex.
+            // After canvas.rotate(bear+180°, tipX, tipY), the FORWARD direction in
+            // screen space corresponds to +Y in this rotated canvas (not −Y).
+            // Proof: for bearing=0° (north), rotating by 180° maps screen-up (−Y)
+            // to canvas-down (+Y). So the cone must fan toward tipY + coneLen.
             val halfRad = Math.toRadians(coneHalfDeg.toDouble()).toFloat()
             val sinH = sin(halfRad.toDouble()).toFloat()
             val cosH = cos(halfRad.toDouble()).toFloat()
 
             conePath.reset()
-            conePath.moveTo(tipX, tipY)                             // apex = GPS point
-            conePath.lineTo(tipX - coneLen * sinH, tipY - coneLen * cosH)  // left edge
-            conePath.lineTo(tipX + coneLen * sinH, tipY - coneLen * cosH)  // right edge
+            conePath.moveTo(tipX, tipY)                                    // apex = GPS point
+            conePath.lineTo(tipX - coneLen * sinH, tipY + coneLen * cosH) // forward-left
+            conePath.lineTo(tipX + coneLen * sinH, tipY + coneLen * cosH) // forward-right
             conePath.close()
 
             // Gradient: opaque orange at the apex, transparent at the far end
