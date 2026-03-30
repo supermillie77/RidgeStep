@@ -7,12 +7,13 @@ import android.view.ViewGroup
 import android.widget.TextView
 import com.example.scottishhillnav.R
 import com.example.scottishhillnav.hills.Hill
+import com.example.scottishhillnav.hills.WalkLogManager
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import kotlin.math.roundToInt
 
 /**
- * Bottom sheet shown when the user taps a summit triangle on the map.
- * Displays hill stats and a "Route from here" button.
+ * Bottom sheet shown when the user long-presses a summit triangle on the map.
+ * Displays hill stats, a "Route from here" button, and a "Mark as climbed" toggle.
  */
 class SummitInfoSheet : BottomSheetDialogFragment() {
 
@@ -30,11 +31,10 @@ class SummitInfoSheet : BottomSheetDialogFragment() {
 
         view.findViewById<TextView>(R.id.summitName).text = hill.name
 
-        val categoryArea = buildString {
+        view.findViewById<TextView>(R.id.summitCategoryArea).text = buildString {
             append(hill.category)
             if (hill.area.isNotEmpty()) append("  ·  ${hill.area}")
         }
-        view.findViewById<TextView>(R.id.summitCategoryArea).text = categoryArea
 
         view.findViewById<TextView>(R.id.summitElevation).text =
             if (hill.elevationM > 0) "${hill.elevationM} m" else "—"
@@ -50,7 +50,28 @@ class SummitInfoSheet : BottomSheetDialogFragment() {
             dismiss()
         }
 
+        // ── Mark as climbed ───────────────────────────────────────────────────
+        val markBtn = view.findViewById<TextView>(R.id.summitMarkBtn)
+        updateMarkBtn(markBtn)
+        markBtn.setOnClickListener {
+            val nowDone = WalkLogManager.toggle(requireContext(), hill.id)
+            updateMarkBtn(markBtn)
+            val msg = if (nowDone) "${hill.name} added to your log!" else "${hill.name} removed from log."
+            android.widget.Toast.makeText(requireContext(), msg, android.widget.Toast.LENGTH_SHORT).show()
+        }
+
         view.findViewById<TextView>(R.id.summitDismissBtn).setOnClickListener { dismiss() }
+    }
+
+    private fun updateMarkBtn(btn: TextView) {
+        val done = WalkLogManager.isCompleted(requireContext(), hill.id)
+        btn.text = if (done) "✓  Climbed — tap to remove" else "△  Mark as climbed"
+        btn.setTextColor(
+            if (done) 0xFF4CAF50.toInt() else 0xFFFF6B35.toInt()
+        )
+        btn.setBackgroundColor(
+            if (done) 0xFF162032.toInt() else 0xFF1E3347.toInt()
+        )
     }
 
     private fun formatDist(m: Double): String =

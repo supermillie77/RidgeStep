@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0D1B2A">
+
+    <!-- Toolbar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#0D1B2A"
+        android:paddingStart="8dp"
+        android:paddingEnd="16dp"
+        android:elevation="4dp">
+
+        <TextView
+            android:id="@+id/btnBack"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:text="&#8592;"
+            android:textSize="22sp"
+            android:textColor="#E8EDF2"
+            android:gravity="center"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="My Hill Log"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="#E8EDF2"
+            android:layout_marginStart="4dp"/>
+
+        <TextView
+            android:id="@+id/btnShareLocation"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Share location"
+            android:textSize="12sp"
+            android:textColor="#FF6B35"
+            android:background="#1E3347"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"/>
+
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View android:layout_width="match_parent" android:layout_height="1dp"
+        android:background="#1E3347"/>
+
+    <!-- Total badge -->
+    <LinearLayout
+        android:id="@+id/totalBadge"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp"
+        android:background="#0D1B2A">
+
+        <TextView
+            android:id="@+id/totalCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0"
+            android:textSize="40sp"
+            android:textStyle="bold"
+            android:textColor="#FF6B35"/>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="summits bagged"
+                android:textSize="16sp"
+                android:textColor="#E8EDF2"/>
+
+            <TextView
+                android:id="@+id/totalSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="across all categories"
+                android:textSize="12sp"
+                android:textColor="#7B95A9"
+                android:layout_marginTop="2dp"/>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View android:layout_width="match_parent" android:layout_height="1dp"
+        android:background="#1E3347"/>
+
+    <!-- Scrollable content: category cards + completed list -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fadingEdgeLength="12dp"
+        android:requiresFadingEdge="vertical">
+
+        <LinearLayout
+            android:id="@+id/progressContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="24dp"/>
+
+    </ScrollView>
+
+</LinearLayout>

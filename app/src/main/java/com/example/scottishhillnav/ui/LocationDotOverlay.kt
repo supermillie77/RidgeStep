@@ -16,10 +16,15 @@ import kotlin.math.sqrt
  * Draws the user's GPS position as an orange teardrop map pin matching the app icon.
  * The sharp tip points to the exact GPS coordinate; the round head sits above it.
  * A translucent orange accuracy ring surrounds the tip when GPS accuracy is meaningful.
+ *
+ * When [bearing] is set the pin rotates around its tip so the head points in the direction
+ * of travel, matching the behaviour of Google Maps.
  */
 class LocationDotOverlay(density: Float) : Overlay() {
 
     var location: Location? = null
+    /** Direction of travel in degrees (0 = north, 90 = east). Null = no bearing known. */
+    var bearing: Float? = null
 
     private val pt      = android.graphics.Point()
     private val pinPath = Path()
@@ -72,11 +77,16 @@ class LocationDotOverlay(density: Float) : Overlay() {
             }
         }
 
-        buildPinPath(tipX, tipY)
+        // Rotate around the pin tip to show direction of travel
+        val bear = bearing
+        if (bear != null) canvas.save().also { canvas.rotate(bear, tipX, tipY) }
 
+        buildPinPath(tipX, tipY)
         canvas.drawPath(pinPath, borderPaint)
         canvas.drawPath(pinPath, pinFill)
         canvas.drawCircle(tipX, tipY - tailLen, innerR, holePaint)
+
+        if (bear != null) canvas.restore()
     }
 
     /**

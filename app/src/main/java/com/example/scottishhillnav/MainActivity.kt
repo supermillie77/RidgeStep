@@ -49,8 +49,10 @@ import com.example.scottishhillnav.navigation.RouteIndex
 import com.example.scottishhillnav.navigation.VoiceNavigator
 import com.example.scottishhillnav.routing.*
 import com.example.scottishhillnav.ui.ElevationProfileView
+import com.example.scottishhillnav.hills.WalkLogManager
 import com.example.scottishhillnav.ui.LocationDotOverlay
 import com.example.scottishhillnav.ui.NearbyHillsSheet
+import com.example.scottishhillnav.ui.WalkTrailOverlay
 import com.example.scottishhillnav.ui.RouteGradientOverlay
 import com.example.scottishhillnav.ui.SummitInfoSheet
 import com.example.scottishhillnav.ui.SummitOverlay
@@ -63,6 +65,8 @@ import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
+import org.osmdroid.views.overlay.compass.CompassOverlay
+import org.osmdroid.views.overlay.compass.InternalCompassOrientationProvider
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 
@@ -151,6 +155,7 @@ class MainActivity : AppCompatActivity() {
     private var hasCheckedWeather = false          // weather check fires once after first GPS fix
     private var programmaticScroll = false         // true during auto-zoom so scroll events don't falsely trigger locate button
     private lateinit var locationDotOverlay: LocationDotOverlay
+    private lateinit var walkTrailOverlay: WalkTrailOverlay
     private lateinit var locateFab: FloatingActionButton
     private lateinit var weatherBanner: LinearLayout
     private lateinit var weatherBannerText: TextView
@@ -209,6 +214,19 @@ class MainActivity : AppCompatActivity() {
             val loc = result.lastLocation ?: return
             lastLocation = loc
             locationDotOverlay.location = loc
+            locationDotOverlay.bearing  = if (loc.hasBearing()) loc.bearing else null
+
+            // Record walking trail during active hill navigation
+            if (navPhase == NavPhase.HILL_NAV) {
+                walkTrailOverlay.addPoint(loc.latitude, loc.longitude)
+            }
+
+            // Persist last known location for sharing from the progress page
+            getSharedPreferences("last_location", MODE_PRIVATE).edit()
+                .putFloat("lat", loc.latitude.toFloat())
+                .putFloat("lon", loc.longitude.toFloat())
+                .apply()
+
             map.invalidate()
             // On the very first GPS fix: zoom map to 5-mile radius around user and check weather
             if (!hasAnimatedToUser) {
@@ -314,9 +332,20 @@ class MainActivity : AppCompatActivity() {
         map.overlays.add(routeOverlay)
         map.overlays.add(SummitOverlay(resources.displayMetrics.density))
 
-        // ── User location overlay (blue dot fed from fused client) ───────────
+        // ── GPS walking trail ─────────────────────────────────────────────────
+        walkTrailOverlay = WalkTrailOverlay()
+        map.overlays.add(walkTrailOverlay)
+
+        // ── User location overlay ─────────────────────────────────────────────
         locationDotOverlay = LocationDotOverlay(resources.displayMetrics.density)
         map.overlays.add(locationDotOverlay)
+
+        // ── Compass (top-left corner) ─────────────────────────────────────────
+        val compassOverlay = CompassOverlay(
+            this, InternalCompassOrientationProvider(this), map
+        )
+        compassOverlay.enableCompass()
+        map.overlays.add(compassOverlay)
 
         // ── SharedPreferences: track first-use of each button ────────────────
         val btnPrefs = getSharedPreferences("button_state", MODE_PRIVATE)
@@ -441,6 +470,32 @@ class MainActivity : AppCompatActivity() {
             setMargins(margin, margin, margin, peekOffset + fabSize + margin)
         }
         root.addView(nearFab, nearFabParams)
+
+        // ── My Hill Log FAB (bottom-left, above near FAB) ────────────────────
+        val logFab = ExtendedFloatingActionButton(this).apply {
+            setIconResource(android.R.drawable.ic_menu_agenda)
+            setText("My log")
+            contentDescription = "My hill log — track completed summits"
+            if (btnPrefs.getBoolean("used_log", false)) isExtended = false
+            setOnClickListener {
+                if (!btnPrefs.getBoolean("used_log", false)) {
+                    btnPrefs.edit().putBoolean("used_log", true).apply()
+                    shrink()
+                }
+                startActivity(Intent(this@MainActivity, WalkProgressActivity::class.java))
+            }
+        }
+        val logFabParams = CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.START
+            val margin     = (resources.displayMetrics.density * 16).toInt()
+            val peekOffset = (resources.displayMetrics.density * 156).toInt()
+            val fabSize    = (resources.displayMetrics.density * 56).toInt()
+            setMargins(margin, margin, margin, peekOffset + (fabSize + margin) * 2)
+        }
+        root.addView(logFab, logFabParams)
 
         // Show locate button when user manually pans — but not during the initial GPS animation
         map.addMapListener(object : MapListener {
@@ -2011,6 +2066,7 @@ class MainActivity : AppCompatActivity() {
         tapMarkers.clear()
         routeCandidates.clear(); activeIndex = 0
         routeOverlay.clear()
+        walkTrailOverlay.clear()
         routeIndex = null; elevationProfile = null; progressMeters = 0.0
         offTrackCount = 0; lastOffTrackAnnounce = 0L
         navPhase = NavPhase.IDLE
@@ -2780,18 +2836,18 @@ class MainActivity : AppCompatActivity() {
             val message = if (carPark.navLat != null) {
                 val ferryTo   = carPark.name.substringBefore(" (ferry").trim()
                 val ferryFrom = carPark.name.substringAfterLast("from ").removeSuffix(")").trim()
-                "Drive to $ferryFrom and take the ferry to $ferryTo.\n\nNavigate to $ferryFrom now?"
+                "\uD83D\uDE95  Drive to $ferryFrom, then take the ferry to $ferryTo.\n\nStart driving directions to $ferryFrom?"
             } else {
-                "Head to ${carPark.name} to start your walk.\n\nOpen navigation now?"
+                "\uD83D\uDE97  Drive to ${carPark.name} to start your walk.\n\nStart driving directions now?"
             }
             AlertDialog.Builder(this)
-                .setTitle("Navigate to ${result.name}")
+                .setTitle("\uD83D\uDE97  Drive to start")
                 .setMessage(message)
-                .setPositiveButton("Navigate") { _, _ ->
+                .setPositiveButton("\uD83D\uDE97  Get directions") { _, _ ->
                     launchRoadNavigation(carPark)
                     enterDrivingPhase(result, carPark)
                 }
-                .setNegativeButton("I'm Already There") { _, _ ->
+                .setNegativeButton("\uD83E\uDDB6  I'm already there") { _, _ ->
                     arriveAtCarPark()
                 }
                 .show()

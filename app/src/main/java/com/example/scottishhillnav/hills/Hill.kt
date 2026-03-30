@@ -7,7 +7,12 @@ data class CarPark(
     val area: String = "",
     /** Road navigation target when different from the walking start (e.g. mainland ferry terminal). */
     val navLat: Double? = null,
-    val navLon: Double? = null
+    val navLon: Double? = null,
+    /**
+     * True for the community-recommended / WalkHighlands-preferred car park for this hill.
+     * Shown at the top of the selection dialog with a ⭐ prefix.
+     */
+    val isPreferred: Boolean = false
 )
 
 data class Hill(

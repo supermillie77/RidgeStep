@@ -3,12 +3,15 @@ package com.example.scottishhillnav
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -91,20 +94,54 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     private fun requestLocationPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED) {
-            // Already granted (e.g. user reinstalled) — go straight to the app
-            done()
+        val permission = Manifest.permission.ACCESS_FINE_LOCATION
+
+        // Already granted
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            done(); return
+        }
+
+        // Previously asked and user denied (but can ask again)
+        if (ActivityCompat.shouldShowRequestPermissionRationale(this, permission)) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(permission, Manifest.permission.ACCESS_COARSE_LOCATION),
+                LOCATION_PERM_REQUEST
+            )
             return
         }
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ),
-            LOCATION_PERM_REQUEST
-        )
+
+        // Check if we have previously asked (permanently denied case)
+        val alreadyAsked = getSharedPreferences("app_state", MODE_PRIVATE)
+            .getBoolean("asked_location_perm", false)
+
+        if (alreadyAsked) {
+            // Permission was permanently denied — send user to app settings
+            AlertDialog.Builder(this)
+                .setTitle("Location permission required")
+                .setMessage(
+                    "You previously denied location access. Please open Settings, " +
+                    "tap Permissions → Location, and select \"Allow only while using the app\"."
+                )
+                .setPositiveButton("Open Settings") { _, _ ->
+                    startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                               Uri.fromParts("package", packageName, null))
+                    )
+                    done()
+                }
+                .setNegativeButton("Maybe later") { _, _ -> done() }
+                .show()
+        } else {
+            // First time asking
+            getSharedPreferences("app_state", MODE_PRIVATE)
+                .edit().putBoolean("asked_location_perm", true).apply()
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(permission, Manifest.permission.ACCESS_COARSE_LOCATION),
+                LOCATION_PERM_REQUEST
+            )
+        }
     }
 
     override fun onRequestPermissionsResult(

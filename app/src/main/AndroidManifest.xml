@@ -27,6 +27,11 @@
         android:name=".MainActivity"
         android:exported="false"/>
 
+    <activity
+        android:name=".WalkProgressActivity"
+        android:exported="false"
+        android:label="My Hill Log"/>
+
 </application>
 
 <queries>
