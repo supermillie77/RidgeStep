@@ -44,6 +44,10 @@
         <action android:name="android.intent.action.VIEW" />
         <data android:scheme="https" android:host="maps.google.com" />
     </intent>
+    <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <data android:scheme="https" android:host="weather.com" />
+    </intent>
 </queries>
 
 </manifest>

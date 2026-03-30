@@ -156,6 +156,7 @@ class MainActivity : AppCompatActivity() {
     private var programmaticScroll = false         // true during auto-zoom so scroll events don't falsely trigger locate button
     private lateinit var locationDotOverlay: LocationDotOverlay
     private lateinit var walkTrailOverlay: WalkTrailOverlay
+    private lateinit var compassOverlay: CompassOverlay
     private lateinit var locateFab: FloatingActionButton
     private lateinit var weatherBanner: LinearLayout
     private lateinit var weatherBannerText: TextView
@@ -341,7 +342,7 @@ class MainActivity : AppCompatActivity() {
         map.overlays.add(locationDotOverlay)
 
         // ── Compass (top-left corner) ─────────────────────────────────────────
-        val compassOverlay = CompassOverlay(
+        compassOverlay = CompassOverlay(
             this, InternalCompassOrientationProvider(this), map
         )
         compassOverlay.enableCompass()
@@ -912,12 +913,14 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        compassOverlay.disableCompass()
         stopPopupUpdates()
     }
 
     override fun onResume() {
         super.onResume()
         startLocationUpdates()
+        compassOverlay.enableCompass()
     }
 
     // ── Route progress tracking ───────────────────────────────────────────────
@@ -3242,24 +3245,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Opens the best available weather app for the user's current location.
-     * Tries the device's default weather app first (com.weather.Weather is The Weather Channel;
-     * most OEM devices have a weather shortcut). Falls back to BBC Weather in the browser.
+     * Opens The Weather Channel for the user's current coordinates.
+     * URL format: weather.com/weather/today/l/LAT,LON
      */
     private fun openWeatherApp() {
         val loc = lastLocation
-
-        // Open BBC Weather directly — most weather apps don't register geo intents.
-
-        // 2. BBC Weather search for current coordinates (works in any browser)
         val lat = loc?.latitude
         val lon = loc?.longitude
         val url = if (lat != null && lon != null) {
-            "https://www.bbc.co.uk/weather/locator/search?q=$lat,$lon&locale=en-GB"
+            "https://weather.com/weather/today/l/${"%.4f".format(lat)},${"%.4f".format(lon)}"
         } else {
-            "https://www.bbc.co.uk/weather/scotland"
+            "https://weather.com/en-GB/weather/today/l/scotland-united-kingdom"
         }
-
         try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         } catch (e: ActivityNotFoundException) {
