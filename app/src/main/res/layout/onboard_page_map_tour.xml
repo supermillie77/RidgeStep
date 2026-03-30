@@ -369,7 +369,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Orange teardrop pin shows your GPS position. When moving it rotates to face your direction of travel and shows a direction cone and compass label (N, NE, E…)"
+                        android:text="Orange teardrop showing your GPS position. When you move: the sharp POINT rotates to face your direction of travel; an orange cone radiates forward from the point; and the compass direction (N, NE, E&#8230;) is shown inside the round head of the pin."
                         android:textSize="11sp"
                         android:textColor="@color/ob_subtitle"
                         android:layout_marginTop="1dp"

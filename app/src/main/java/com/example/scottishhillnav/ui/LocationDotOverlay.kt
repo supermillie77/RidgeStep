@@ -1,8 +1,6 @@
 package com.example.scottishhillnav.ui
 
 import android.graphics.Canvas
-import android.graphics.LinearGradient
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
@@ -15,15 +13,17 @@ import org.osmdroid.views.overlay.Overlay
 import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Draws the user's GPS position as an orange teardrop map pin matching the app icon.
+ * Draws the user's GPS position as an orange teardrop map pin.
  *
- * When [bearing] is set:
- *  - The pin rotates so the head points in the direction of travel.
- *  - A translucent direction-cone (like Google Maps) fans out from the pin head.
- *  - A compass-direction label (N / NE / E … NNW etc.) is drawn below the pin tip.
+ * When [bearing] is set (user is moving):
+ *  - The pin rotates so the SHARP TIP points in the direction of travel.
+ *  - A translucent orange cone fans forward from the tip.
+ *  - A 16-point compass label (N / NE / E … NNW) is drawn inside the
+ *    round head of the pin, upright and readable at all orientations.
  */
 class LocationDotOverlay(private val density: Float) : Overlay() {
 
@@ -31,18 +31,18 @@ class LocationDotOverlay(private val density: Float) : Overlay() {
     /** Direction of travel in degrees (0 = north, clockwise). Null = no bearing known. */
     var bearing: Float? = null
 
-    private val pt      = android.graphics.Point()
-    private val pinPath = Path()
+    private val pt       = android.graphics.Point()
+    private val pinPath  = Path()
     private val conePath = Path()
 
     // Pin proportions — headR:tailLen ≈ 1:2.2 matches the app icon silhouette
     private val headR   = 13f * density
     private val tailLen = headR * 2.2f
-    private val innerR  = headR * 0.38f
+    private val innerR  = headR * 0.38f   // dark hole radius (hidden when direction label shown)
 
-    // Direction cone dimensions
-    private val coneLen    = headR * 4.5f   // how far the cone reaches from the head centre
-    private val coneHalfDeg = 28f           // half-angle of the cone (56° total)
+    // Direction cone: fans 56° (±28°) forward from the tip
+    private val coneLen     = headR * 5f
+    private val coneHalfDeg = 28f
 
     private val accuracyFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -68,20 +68,16 @@ class LocationDotOverlay(private val density: Float) : Overlay() {
         style = Paint.Style.FILL
         color = 0xCC3A1500.toInt()
     }
-    // Cone: bright orange in the centre fading to transparent at the edges
     private val conePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
-    private val labelBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = 0xCC0D1B2A.toInt()
-    }
-    private val labelTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = 0xFFFF6D00.toInt()
-        textSize = 11f * density
+    // Label inside the head circle — white text, bold, small enough to fit
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style     = Paint.Style.FILL
+        color     = 0xFFFFFFFF.toInt()
+        textSize  = 8.5f * density
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT_BOLD
+        typeface  = Typeface.DEFAULT_BOLD
     }
 
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
@@ -92,7 +88,7 @@ class LocationDotOverlay(private val density: Float) : Overlay() {
         val tipX = pt.x.toFloat()
         val tipY = pt.y.toFloat()
 
-        // Accuracy ring (drawn before rotation — it's always a circle)
+        // Accuracy ring — always a circle, drawn before any rotation
         if (loc.hasAccuracy()) {
             val mpp = metersPerPixel(mapView, loc.latitude)
             val px  = (loc.accuracy / mpp).toFloat()
@@ -104,61 +100,63 @@ class LocationDotOverlay(private val density: Float) : Overlay() {
 
         val bear = bearing
         if (bear != null) {
+            // Rotate by (bear + 180°) so the TIP — not the head — faces the direction of travel.
+            // At bear=0 (north): without offset, head would be above (north) and tip below (south).
+            // Adding 180° flips the pin so tip is above (north) = tip points north. ✓
             canvas.save()
-            canvas.rotate(bear, tipX, tipY)
+            canvas.rotate(bear + 180f, tipX, tipY)
 
-            // ── Direction cone ────────────────────────────────────────────────
-            // The head centre is at (tipX, tipY - tailLen).
-            // The cone fans UPWARD from the head (which is pointing in the travel direction).
-            val hcx = tipX
-            val hcy = tipY - tailLen
-
-            // Build cone path in "pin-up" space (bearing already applied by canvas.rotate)
+            // ── Direction cone from the tip ───────────────────────────────────
+            // In this rotated canvas the tip (forward direction) points upward (negative Y).
+            // The cone fans upward from the tip apex.
             val halfRad = Math.toRadians(coneHalfDeg.toDouble()).toFloat()
-            val tipConeX = hcx
-            val tipConeY = hcy - coneLen  // cone apex above the head
-            val leftX  = hcx - coneLen * Math.sin(halfRad.toDouble()).toFloat()
-            val leftY  = hcy - coneLen * Math.cos(halfRad.toDouble()).toFloat()
-            val rightX = hcx + coneLen * Math.sin(halfRad.toDouble()).toFloat()
-            val rightY = hcy - coneLen * Math.cos(halfRad.toDouble()).toFloat()
+            val sinH = sin(halfRad.toDouble()).toFloat()
+            val cosH = cos(halfRad.toDouble()).toFloat()
 
             conePath.reset()
-            conePath.moveTo(hcx, hcy)
-            conePath.lineTo(leftX, leftY)
-            conePath.lineTo(rightX, rightY)
+            conePath.moveTo(tipX, tipY)                             // apex = GPS point
+            conePath.lineTo(tipX - coneLen * sinH, tipY - coneLen * cosH)  // left edge
+            conePath.lineTo(tipX + coneLen * sinH, tipY - coneLen * cosH)  // right edge
             conePath.close()
 
-            // Radial gradient: opaque orange at the head → transparent at the tip
+            // Gradient: opaque orange at the apex, transparent at the far end
             conePaint.shader = RadialGradient(
-                hcx, hcy, coneLen,
+                tipX, tipY, coneLen,
                 intArrayOf(0xAAFF6D00.toInt(), 0x00FF6D00.toInt()),
                 floatArrayOf(0f, 1f),
                 Shader.TileMode.CLAMP
             )
             canvas.drawPath(conePath, conePaint)
-        }
 
-        // ── Pin (drawn inside rotation block if bearing is set) ───────────────
-        buildPinPath(tipX, tipY)
-        canvas.drawPath(pinPath, borderPaint)
-        canvas.drawPath(pinPath, pinFill)
-        canvas.drawCircle(tipX, tipY - tailLen, innerR, holePaint)
+            // ── Pin (drawn over the cone so cone appears to radiate from tip) ─
+            buildPinPath(tipX, tipY)
+            canvas.drawPath(pinPath, borderPaint)
+            canvas.drawPath(pinPath, pinFill)
+            // Omit the dark hole — replaced by the direction label drawn below
 
-        if (bear != null) canvas.restore()
+            canvas.restore()
 
-        // ── Compass label (drawn AFTER restore, in screen space) ─────────────
-        if (bear != null) {
-            val label   = bearingLabel(bear)
-            val textW   = labelTextPaint.measureText(label)
-            val padH    = 4f * density
-            val padV    = 2f * density
-            val bgLeft  = tipX - textW / 2f - padH
-            val bgRight = tipX + textW / 2f + padH
-            val bgTop   = tipY + tailLen * 0.3f
-            val bgBot   = bgTop + labelTextPaint.textSize + padV * 2f
-            val radius  = 3f * density
-            canvas.drawRoundRect(bgLeft, bgTop, bgRight, bgBot, radius, radius, labelBgPaint)
-            canvas.drawText(label, tipX, bgBot - padV, labelTextPaint)
+            // ── Compass label inside the head circle (drawn in screen space) ──
+            // Compute head centre in screen coordinates after rotation by (bear+180°).
+            // Vector from tip to head in unrotated space: (0, -tailLen).
+            // After CW rotation by θ = bear+180:
+            //   headSX = tipX + tailLen * sin(θ_rad)
+            //   headSY = tipY - tailLen * cos(θ_rad)
+            val thetaRad = Math.toRadians((bear + 180.0))
+            val headSX = tipX + tailLen * sin(thetaRad).toFloat()
+            val headSY = tipY - tailLen * cos(thetaRad).toFloat()
+
+            val label = bearingLabel(bear)
+            // Vertically centre the text in the circle
+            val textOffset = (labelPaint.descent() - labelPaint.ascent()) / 2f - labelPaint.descent()
+            canvas.drawText(label, headSX, headSY + textOffset, labelPaint)
+
+        } else {
+            // No bearing — draw static pin with dark hole
+            buildPinPath(tipX, tipY)
+            canvas.drawPath(pinPath, borderPaint)
+            canvas.drawPath(pinPath, pinFill)
+            canvas.drawCircle(tipX, tipY - tailLen, innerR, holePaint)
         }
     }
 
@@ -168,8 +166,7 @@ class LocationDotOverlay(private val density: Float) : Overlay() {
             "N","NNE","NE","ENE","E","ESE","SE","SSE",
             "S","SSW","SW","WSW","W","WNW","NW","NNW"
         )
-        val index = ((deg + 11.25f) / 22.5f).toInt() % 16
-        return dirs[index]
+        return dirs[((deg + 11.25f) / 22.5f).toInt() % 16]
     }
 
     private fun buildPinPath(tipX: Float, tipY: Float) {
@@ -188,11 +185,7 @@ class LocationDotOverlay(private val density: Float) : Overlay() {
 
         pinPath.reset()
         pinPath.moveTo(lx, ly)
-        pinPath.arcTo(
-            cx - headR, cy - headR,
-            cx + headR, cy + headR,
-            leftAngle, sweepAngle, false
-        )
+        pinPath.arcTo(cx - headR, cy - headR, cx + headR, cy + headR, leftAngle, sweepAngle, false)
         pinPath.lineTo(tipX, tipY)
         pinPath.close()
     }
