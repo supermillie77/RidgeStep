@@ -38,6 +38,7 @@ import com.example.scottishhillnav.hills.Attraction
 import com.example.scottishhillnav.hills.Hill
 import com.example.scottishhillnav.hills.HillRepository
 import com.example.scottishhillnav.hills.HillSearchService
+import com.example.scottishhillnav.hills.PreferredParking
 import com.example.scottishhillnav.hills.HillSuggestionService
 import com.example.scottishhillnav.hills.WeatherService
 import com.example.scottishhillnav.navigation.ElevationProfileModel
@@ -2701,8 +2702,25 @@ class MainActivity : AppCompatActivity() {
         routingBanner.visibility = View.VISIBLE
         Thread {
             // Queries now run in parallel inside findNearbyCarParks; a single call is enough.
-            val parks = try { HillSearchService.findNearbyCarParks(result.lat, result.lon) }
-                        catch (_: Exception) { emptyList() }
+            val rawParks = try { HillSearchService.findNearbyCarParks(result.lat, result.lon) }
+                           catch (_: Exception) { emptyList() }
+
+            // Inject preferred car park at the top (looked up by nearest hill ID)
+            val nearestHill = HillRepository.hills.minByOrNull {
+                haversine(result.lat, result.lon, it.summitLat, it.summitLon)
+            }
+            val preferred = nearestHill?.let { PreferredParking.forHillId(it.id) }
+
+            val parks: List<CarPark> = if (preferred != null) {
+                // Remove any Overpass entry that is within 200 m of the preferred park (same place)
+                val deduped = rawParks.filter { cp ->
+                    haversine(cp.lat, cp.lon, preferred.lat, preferred.lon) > 200.0
+                }
+                listOf(preferred) + deduped
+            } else {
+                rawParks
+            }
+
             runOnUiThread {
                 routingBanner.visibility = View.GONE
                 when {
@@ -2712,14 +2730,15 @@ class MainActivity : AppCompatActivity() {
                     }
                     parks.size == 1 -> onHillSelected(result, parks[0])
                     else -> {
-                        val top    = parks.take(8)
+                        val top    = parks.take(9)
                         val labels = top.map { cp ->
                             val dist = haversine(result.lat, result.lon, cp.lat, cp.lon)
                             val distStr = if (dist < 1000) "${dist.toInt()} m"
                                           else "${"%.1f".format(dist / 1000)} km"
                             val bearing = carParkBearing(result.lat, result.lon, cp.lat, cp.lon)
                             val areaStr = if (cp.area.isNotEmpty()) ", ${cp.area}" else ""
-                            "${cp.name}$areaStr · $bearing $distStr"
+                            val prefix  = if (cp.isPreferred) "⭐ Recommended\n" else ""
+                            "$prefix${cp.name}$areaStr · $bearing $distStr"
                         }.toTypedArray()
                         AlertDialog.Builder(this)
                             .setTitle("Select start car park")
@@ -3060,7 +3079,7 @@ class MainActivity : AppCompatActivity() {
         clearRoutes()
         val loc = lastLocation
         val startPt = if (loc != null) GeoPoint(loc.latitude, loc.longitude)
-                      else map.mapCenter
+                      else GeoPoint(map.mapCenter.latitude, map.mapCenter.longitude)
         val destPt  = GeoPoint(attraction.lat, attraction.lon)
 
         navPhase = NavPhase.HILL_NAV
