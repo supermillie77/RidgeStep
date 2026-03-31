@@ -369,7 +369,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Shows conditions after first GPS fix. Tap the weather text to open a full forecast. Dismiss with ✕ — the weather emoji stays visible at the top so you can tap to restore the banner at any time."
+                        android:text="Shows local conditions after first GPS fix. Tap the text to open a full forecast. Tap &#8220;Best weather areas today&#8221; to see which parts of Scotland have the best walking weather right now. Dismiss with ✕ — a small &#8220;Weather&#8221; button stays at the top-right so you can restore the banner at any time."
                         android:textSize="11sp"
                         android:textColor="@color/ob_subtitle"
                         android:layout_marginTop="1dp"

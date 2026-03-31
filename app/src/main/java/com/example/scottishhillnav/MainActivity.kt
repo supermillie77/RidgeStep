@@ -184,6 +184,8 @@ class MainActivity : AppCompatActivity() {
         const val CARPARK_ARRIVAL_M          = 200.0
         const val LOCATION_PERMISSION_REQUEST = 1001
         const val SPEECH_REQUEST_CODE         = 2001
+        /** Height of the weather banner in dp — used to push the compass below it. */
+        const val BANNER_HEIGHT_DP            = 60
         // Ben Nevis summit — used to decide whether curated routes apply
         const val BEN_NEVIS_LAT = 56.7969
         const val BEN_NEVIS_LON = -5.0035
@@ -342,10 +344,15 @@ class MainActivity : AppCompatActivity() {
         locationDotOverlay = LocationDotOverlay(resources.displayMetrics.density)
         map.overlays.add(locationDotOverlay)
 
-        // ── Compass (top-left corner) ─────────────────────────────────────────
+        // ── Compass — positioned below the weather banner ─────────────────────
+        // The weather banner has a fixed minimum height of BANNER_HEIGHT_DP dp.
+        // osmdroid's CompassOverlay draws at setCompassCenter(x, y) in raw pixels.
+        // Default center is (35, 35); move Y down so it sits below the banner.
+        val bannerHeightPx = (resources.displayMetrics.density * BANNER_HEIGHT_DP).toInt()
         compassOverlay = CompassOverlay(
             this, InternalCompassOrientationProvider(this), map
         )
+        compassOverlay.setCompassCenter(35f, bannerHeightPx + 45f)
         compassOverlay.enableCompass()
         map.overlays.add(compassOverlay)
 
@@ -550,12 +557,8 @@ class MainActivity : AppCompatActivity() {
         ))
         topBannerContainer.addView(driveBanner)
 
-        // osmdroid CompassOverlay renders at pixel coords: center (50,50), radius 50 px.
-        // Convert that fixed 100-pixel width to dp so the banner never overlaps the compass.
-        val compassClearPx = (100f / resources.displayMetrics.density + 4).toInt()
-
-        // Weather banner (always shown after first GPS fix; colour reflects conditions).
-        // Left margin = compassClearPx so the top-left compass is never obscured.
+        // Weather banner — full width across the top.
+        // The compass is already repositioned below the banner via setCompassCenter() above.
         weatherBanner = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF2E4A1E.toInt())  // default: dark green (good conditions)
@@ -563,7 +566,7 @@ class MainActivity : AppCompatActivity() {
             val pv = (resources.displayMetrics.density * 14).toInt()
             setPadding(ph, pv, (resources.displayMetrics.density * 10).toInt(), pv)
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = (resources.displayMetrics.density * 60).toInt()
+            minimumHeight = (resources.displayMetrics.density * BANNER_HEIGHT_DP).toInt()
             visibility = View.GONE
             // Consume all touches so they don't fall through to the map beneath
             isClickable = true
@@ -577,28 +580,11 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { openWeatherApp() }
         }
         weatherFindBtn = TextView(this).apply {
-            text = "Good walking areas \u2192"
+            text = "Best weather areas today \u2192"
             textSize = 13f
             setTextColor(0xFF80DEEA.toInt())
             val ph = (resources.displayMetrics.density * 10).toInt()
             setPadding(ph, 0, (resources.displayMetrics.density * 4).toInt(), 0)
-        }
-        // Compact restore pill — shown when banner is dismissed so user can bring it back
-        weatherRestoreBtn = TextView(this).apply {
-            text = "\u26C5"   // ⛅ — updated to match actual conditions in showWeatherBanner
-            textSize = 20f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(0xFF2E4A1E.toInt())
-            val p = (resources.displayMetrics.density * 8).toInt()
-            setPadding(p, p, p, p)
-            contentDescription = "Show weather"
-            visibility = View.GONE
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                weatherRestoreBtn.visibility = View.GONE
-                weatherBanner.visibility = View.VISIBLE
-            }
         }
         val weatherDismissBtn = TextView(this).apply {
             text = "✕"
@@ -615,24 +601,39 @@ class MainActivity : AppCompatActivity() {
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         weatherBanner.addView(weatherFindBtn)
         weatherBanner.addView(weatherDismissBtn)
-        // Banner sits to the right of the compass (left margin clears the 100-pixel compass area)
-        topBannerContainer.addView(weatherBanner, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { leftMargin = compassClearPx })
+        topBannerContainer.addView(weatherBanner)
 
         root.addView(topBannerContainer, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.MATCH_PARENT,
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
         ).apply { gravity = Gravity.TOP })
 
-        // Restore pill anchored at the top-start, also clear of the compass
+        // Restore pill — top-right corner, appears when banner is dismissed.
+        // Top-right keeps it away from the compass (top-left) and is clearly reachable.
+        weatherRestoreBtn = TextView(this).apply {
+            text = "\u26C5  Weather"   // ⛅ — emoji updated to match conditions in showWeatherBanner
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(0xCC2E4A1E.toInt())
+            val pv = (resources.displayMetrics.density * 6).toInt()
+            val ph = (resources.displayMetrics.density * 12).toInt()
+            setPadding(ph, pv, ph, pv)
+            contentDescription = "Show weather banner"
+            visibility = View.GONE
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                weatherRestoreBtn.visibility = View.GONE
+                weatherBanner.visibility = View.VISIBLE
+            }
+        }
         root.addView(weatherRestoreBtn, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            marginStart = compassClearPx
+            gravity = Gravity.TOP or Gravity.END
+            val m = (resources.displayMetrics.density * 8).toInt()
+            setMargins(m, m, m, m)
         })
 
         // ── Route-search overlay ──────────────────────────────────────────────
@@ -3286,16 +3287,17 @@ class MainActivity : AppCompatActivity() {
         }
         val windText = if (current.windKmh >= 20)
             "  \u00B7  ${current.windKmh.toInt()} km/h wind" else ""
-        val bannerBg = if (current.isPoor) 0xFF37474F.toInt() else 0xFF2E4A1E.toInt()
+        val bannerBg      = if (current.isPoor) 0xFF37474F.toInt() else 0xFF2E4A1E.toInt()
+        val restorePillBg = if (current.isPoor) 0xCC37474F.toInt() else 0xCC2E4A1E.toInt()
         weatherBanner.setBackgroundColor(bannerBg)
-        weatherRestoreBtn.setBackgroundColor(bannerBg)
-        weatherRestoreBtn.text = emoji   // keep the restore pill in sync with current conditions
+        weatherRestoreBtn.setBackgroundColor(restorePillBg)
+        weatherRestoreBtn.text = "$emoji  Weather"   // keep in sync with current conditions
         weatherBannerText.text =
             "$emoji ${current.description.replaceFirstChar { it.uppercaseChar() }}$windText"
 
         val clearAreas = allAreas.filter { it.isGood }
         weatherFindBtn.visibility = View.VISIBLE
-        weatherFindBtn.text = if (clearAreas.isEmpty()) "No clear areas today" else "Good walking areas \u2192"
+        weatherFindBtn.text = if (clearAreas.isEmpty()) "No good-weather areas today" else "Best weather areas today \u2192"
         weatherFindBtn.setOnClickListener { showWeatherAreasDialog(clearAreas) }
 
         weatherBanner.visibility = View.VISIBLE
