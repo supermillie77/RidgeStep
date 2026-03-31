@@ -131,7 +131,7 @@ class MainActivity : AppCompatActivity() {
     // Voice navigation
     private lateinit var voiceNavigator: VoiceNavigator
     private lateinit var instructionGenerator: InstructionGenerator
-    private lateinit var voiceFab: ExtendedFloatingActionButton
+    private lateinit var voiceFab: FloatingActionButton
 
     // Off-track detection
     private var offTrackCount         = 0          // consecutive GPS fixes showing off-route
@@ -344,167 +344,106 @@ class MainActivity : AppCompatActivity() {
         locationDotOverlay = LocationDotOverlay(resources.displayMetrics.density)
         map.overlays.add(locationDotOverlay)
 
-        // ── Compass — positioned below the weather banner ─────────────────────
-        // The weather banner has a fixed minimum height of BANNER_HEIGHT_DP dp.
-        // osmdroid's CompassOverlay draws at setCompassCenter(x, y) in raw pixels.
-        // Default center is (35, 35); move Y down so it sits below the banner.
-        val bannerHeightPx = (resources.displayMetrics.density * BANNER_HEIGHT_DP).toInt()
+        // ── Compass (top-left corner, default position) ───────────────────────
+        // The weather banner dismiss pill sits top-right, so the compass is unobstructed.
         compassOverlay = CompassOverlay(
             this, InternalCompassOrientationProvider(this), map
         )
-        compassOverlay.setCompassCenter(35f, bannerHeightPx + 45f)
         compassOverlay.enableCompass()
         map.overlays.add(compassOverlay)
 
-        // ── SharedPreferences: track first-use of each button ────────────────
-        val btnPrefs = getSharedPreferences("button_state", MODE_PRIVATE)
+        // ── FABs — all plain FloatingActionButton (56dp icon-only, same size, always clickable) ──
+        // Previously used ExtendedFloatingActionButton with shrink-on-first-use logic; that caused
+        // click handlers to silently stop working once the buttons were in their shrunk state.
+        val dp = resources.displayMetrics.density
+        val margin     = (dp * 16).toInt()
+        val peekOffset = (dp * 156).toInt()
+        val fabSize    = (dp * 56).toInt()
 
-        // ── Stats FAB ────────────────────────────────────────────────────────
-        val fab = ExtendedFloatingActionButton(this).apply {
-            setIconResource(android.R.drawable.ic_menu_info_details)
-            setText("Stats & info")
+        // Stats & info — bottom-right, lowest
+        val fab = FloatingActionButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_info_details)
             contentDescription = "Navigation stats"
-            if (btnPrefs.getBoolean("used_info", false)) isExtended = false
-            setOnClickListener {
-                if (!btnPrefs.getBoolean("used_info", false)) {
-                    btnPrefs.edit().putBoolean("used_info", true).apply()
-                    shrink()
-                }
-                showStatsPopup()
-            }
+            setOnClickListener { showStatsPopup() }
         }
-        val fabParams = CoordinatorLayout.LayoutParams(
+        root.addView(fab, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.END
-            val margin = (resources.displayMetrics.density * 16).toInt()
-            val peekOffset = (resources.displayMetrics.density * 156).toInt()
             setMargins(margin, margin, margin, peekOffset)
-        }
-        root.addView(fab, fabParams)
+        })
 
-        // ── Voice mute FAB (above the info FAB) ──────────────────────────────
-        voiceFab = ExtendedFloatingActionButton(this).apply {
-            setIconResource(android.R.drawable.ic_lock_silent_mode_off)
-            setText("Voice guide")
+        // Voice guide — bottom-right, middle
+        voiceFab = FloatingActionButton(this).apply {
+            setImageResource(android.R.drawable.ic_lock_silent_mode_off)
             contentDescription = "Mute voice navigation"
-            if (btnPrefs.getBoolean("used_voice", false)) isExtended = false
-            setOnClickListener {
-                if (!btnPrefs.getBoolean("used_voice", false)) {
-                    btnPrefs.edit().putBoolean("used_voice", true).apply()
-                    shrink()
-                }
-                toggleVoiceMute()
-            }
+            setOnClickListener { toggleVoiceMute() }
         }
-        val voiceFabParams = CoordinatorLayout.LayoutParams(
+        root.addView(voiceFab, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.END
-            val margin    = (resources.displayMetrics.density * 16).toInt()
-            val peekOff   = (resources.displayMetrics.density * 156).toInt()
-            val fabSize   = (resources.displayMetrics.density * 56).toInt()
-            setMargins(margin, margin, margin, peekOff + fabSize + margin)
-        }
-        root.addView(voiceFab, voiceFabParams)
+            setMargins(margin, margin, margin, peekOffset + fabSize + margin)
+        })
 
-        // ── Select Hill FAB (bottom-right, above voice FAB) ──────────────────
-        val hillFab = ExtendedFloatingActionButton(this).apply {
-            setIconResource(android.R.drawable.ic_menu_search)
-            setText("Find a hill")
+        // Find a hill — bottom-right, top
+        val hillFab = FloatingActionButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_search)
             contentDescription = "Find a hill"
-            if (btnPrefs.getBoolean("used_find", false)) isExtended = false
-            setOnClickListener {
-                if (!btnPrefs.getBoolean("used_find", false)) {
-                    btnPrefs.edit().putBoolean("used_find", true).apply()
-                    shrink()
-                }
-                showHillSearch()
-            }
+            setOnClickListener { showHillSearch() }
         }
-        val hillFabParams = CoordinatorLayout.LayoutParams(
+        root.addView(hillFab, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.END
-            val margin  = (resources.displayMetrics.density * 16).toInt()
-            val peekOff = (resources.displayMetrics.density * 156).toInt()
-            val fabSize = (resources.displayMetrics.density * 56).toInt()
-            setMargins(margin, margin, margin, peekOff + (fabSize + margin) * 2)
-        }
-        root.addView(hillFab, hillFabParams)
+            setMargins(margin, margin, margin, peekOffset + (fabSize + margin) * 2)
+        })
 
-        // ── Locate FAB (bottom-left) — appears when user pans away from their position ──
+        // Re-centre — bottom-left, lowest (appears only when user pans away)
         locateFab = FloatingActionButton(this).apply {
             setImageResource(R.drawable.ic_my_location)
             contentDescription = "Return to my location"
             visibility = View.GONE
             setOnClickListener { returnToMyLocation() }
         }
-        val locateFabParams = CoordinatorLayout.LayoutParams(
+        root.addView(locateFab, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.START
-            val margin    = (resources.displayMetrics.density * 16).toInt()
-            val peekOffset = (resources.displayMetrics.density * 156).toInt()
             setMargins(margin, margin, margin, peekOffset)
-        }
-        root.addView(locateFab, locateFabParams)
+        })
 
-        // ── Near me FAB (bottom-left, above locate FAB) ──────────────────────
-        val nearFab = ExtendedFloatingActionButton(this).apply {
-            setIconResource(android.R.drawable.ic_menu_compass)
-            setText("Hills near me")
-            contentDescription = "Hills near me — see the closest summits to your location"
-            if (btnPrefs.getBoolean("used_near", false)) isExtended = false
-            setOnClickListener {
-                if (!btnPrefs.getBoolean("used_near", false)) {
-                    btnPrefs.edit().putBoolean("used_near", true).apply()
-                    shrink()
-                }
-                showNearbyHills()
-            }
+        // Hills near me — bottom-left, middle
+        val nearFab = FloatingActionButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_compass)
+            contentDescription = "Hills near me"
+            setOnClickListener { showNearbyHills() }
         }
-        val nearFabParams = CoordinatorLayout.LayoutParams(
+        root.addView(nearFab, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.START
-            val margin     = (resources.displayMetrics.density * 16).toInt()
-            val peekOffset = (resources.displayMetrics.density * 156).toInt()
-            val fabSize    = (resources.displayMetrics.density * 56).toInt()
             setMargins(margin, margin, margin, peekOffset + fabSize + margin)
-        }
-        root.addView(nearFab, nearFabParams)
+        })
 
-        // ── My Hill Log FAB (bottom-left, above near FAB) ────────────────────
-        val logFab = ExtendedFloatingActionButton(this).apply {
-            setIconResource(android.R.drawable.ic_menu_myplaces)
-            setText("My log")
-            contentDescription = "My hill log — track completed summits"
-            if (btnPrefs.getBoolean("used_log", false)) isExtended = false
-            setOnClickListener {
-                if (!btnPrefs.getBoolean("used_log", false)) {
-                    btnPrefs.edit().putBoolean("used_log", true).apply()
-                    shrink()
-                }
-                startActivity(Intent(this@MainActivity, WalkProgressActivity::class.java))
-            }
+        // My log — bottom-left, top
+        val logFab = FloatingActionButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_myplaces)
+            contentDescription = "My hill log"
+            setOnClickListener { startActivity(Intent(this@MainActivity, WalkProgressActivity::class.java)) }
         }
-        val logFabParams = CoordinatorLayout.LayoutParams(
+        root.addView(logFab, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.WRAP_CONTENT,
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.START
-            val margin     = (resources.displayMetrics.density * 16).toInt()
-            val peekOffset = (resources.displayMetrics.density * 156).toInt()
-            val fabSize    = (resources.displayMetrics.density * 56).toInt()
             setMargins(margin, margin, margin, peekOffset + (fabSize + margin) * 2)
-        }
-        root.addView(logFab, logFabParams)
+        })
 
         // Show locate button when user manually pans — but not during the initial GPS animation
         map.addMapListener(object : MapListener {
@@ -3055,7 +2994,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun toggleVoiceMute() {
         voiceNavigator.muted = !voiceNavigator.muted
-        voiceFab.setIconResource(
+        voiceFab.setImageResource(
             if (voiceNavigator.muted)
                 android.R.drawable.ic_lock_silent_mode        // muted
             else

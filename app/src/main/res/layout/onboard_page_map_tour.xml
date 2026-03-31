@@ -33,7 +33,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Ten controls — expand on first use, then tuck to icons"
+            android:text="Ten icon buttons — tap any icon to use it"
             android:textSize="12sp"
             android:textColor="@color/ob_subtitle"
             android:layout_marginTop="4dp"
