@@ -161,6 +161,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var weatherBanner: LinearLayout
     private lateinit var weatherBannerText: TextView
     private lateinit var weatherFindBtn: TextView
+    private lateinit var weatherRestoreBtn: TextView  // compact pill shown when banner is dismissed
 
     // Overpass routing graph cache — reused when switching between nearby car parks so we
     // don't make a fresh Overpass call (and hit rate-limits) for every car park selection.
@@ -448,7 +449,7 @@ class MainActivity : AppCompatActivity() {
 
         // ── Near me FAB (bottom-left, above locate FAB) ──────────────────────
         val nearFab = ExtendedFloatingActionButton(this).apply {
-            setIconResource(android.R.drawable.ic_menu_agenda)
+            setIconResource(android.R.drawable.ic_menu_compass)
             setText("Hills near me")
             contentDescription = "Hills near me — see the closest summits to your location"
             if (btnPrefs.getBoolean("used_near", false)) isExtended = false
@@ -474,7 +475,7 @@ class MainActivity : AppCompatActivity() {
 
         // ── My Hill Log FAB (bottom-left, above near FAB) ────────────────────
         val logFab = ExtendedFloatingActionButton(this).apply {
-            setIconResource(android.R.drawable.ic_menu_agenda)
+            setIconResource(android.R.drawable.ic_menu_myplaces)
             setText("My log")
             contentDescription = "My hill log — track completed summits"
             if (btnPrefs.getBoolean("used_log", false)) isExtended = false
@@ -549,52 +550,90 @@ class MainActivity : AppCompatActivity() {
         ))
         topBannerContainer.addView(driveBanner)
 
-        // Weather banner (always shown after first GPS fix; colour reflects conditions)
+        // osmdroid CompassOverlay renders at pixel coords: center (50,50), radius 50 px.
+        // Convert that fixed 100-pixel width to dp so the banner never overlaps the compass.
+        val compassClearPx = (100f / resources.displayMetrics.density + 4).toInt()
+
+        // Weather banner (always shown after first GPS fix; colour reflects conditions).
+        // Left margin = compassClearPx so the top-left compass is never obscured.
         weatherBanner = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0xFF2E4A1E.toInt())  // default: dark green (good conditions)
-            val ph = (resources.displayMetrics.density * 20).toInt()
-            val pv = (resources.displayMetrics.density * 18).toInt()
+            val ph = (resources.displayMetrics.density * 16).toInt()
+            val pv = (resources.displayMetrics.density * 14).toInt()
             setPadding(ph, pv, (resources.displayMetrics.density * 10).toInt(), pv)
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = (resources.displayMetrics.density * 72).toInt()
+            minimumHeight = (resources.displayMetrics.density * 60).toInt()
             visibility = View.GONE
             // Consume all touches so they don't fall through to the map beneath
             isClickable = true
             isFocusable = true
         }
         weatherBannerText = TextView(this).apply {
-            textSize = 17f
+            textSize = 15f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
-            // Tap the weather text → open the device weather app / BBC Weather for this location
+            // Tap the weather text → open weather app for this location
             setOnClickListener { openWeatherApp() }
         }
         weatherFindBtn = TextView(this).apply {
             text = "Good walking areas \u2192"
-            textSize = 15f
+            textSize = 13f
             setTextColor(0xFF80DEEA.toInt())
-            val ph = (resources.displayMetrics.density * 14).toInt()
+            val ph = (resources.displayMetrics.density * 10).toInt()
             setPadding(ph, 0, (resources.displayMetrics.density * 4).toInt(), 0)
+        }
+        // Compact restore pill — shown when banner is dismissed so user can bring it back
+        weatherRestoreBtn = TextView(this).apply {
+            text = "\u26C5"   // ⛅ — updated to match actual conditions in showWeatherBanner
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(0xFF2E4A1E.toInt())
+            val p = (resources.displayMetrics.density * 8).toInt()
+            setPadding(p, p, p, p)
+            contentDescription = "Show weather"
+            visibility = View.GONE
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                weatherRestoreBtn.visibility = View.GONE
+                weatherBanner.visibility = View.VISIBLE
+            }
         }
         val weatherDismissBtn = TextView(this).apply {
             text = "✕"
-            textSize = 18f
+            textSize = 16f
             setTextColor(0xFFB0BEC5.toInt())
             val ph = (resources.displayMetrics.density * 10).toInt()
             setPadding(ph, 0, 0, 0)
-            setOnClickListener { weatherBanner.visibility = View.GONE }
+            setOnClickListener {
+                weatherBanner.visibility = View.GONE
+                weatherRestoreBtn.visibility = View.VISIBLE
+            }
         }
         weatherBanner.addView(weatherBannerText, LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         weatherBanner.addView(weatherFindBtn)
         weatherBanner.addView(weatherDismissBtn)
-        topBannerContainer.addView(weatherBanner)
+        // Banner sits to the right of the compass (left margin clears the 100-pixel compass area)
+        topBannerContainer.addView(weatherBanner, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { leftMargin = compassClearPx })
 
         root.addView(topBannerContainer, CoordinatorLayout.LayoutParams(
             CoordinatorLayout.LayoutParams.MATCH_PARENT,
             CoordinatorLayout.LayoutParams.WRAP_CONTENT
         ).apply { gravity = Gravity.TOP })
+
+        // Restore pill anchored at the top-start, also clear of the compass
+        root.addView(weatherRestoreBtn, CoordinatorLayout.LayoutParams(
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+            CoordinatorLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            marginStart = compassClearPx
+        })
 
         // ── Route-search overlay ──────────────────────────────────────────────
         // Shown in the centre of the map while A* / Overpass download is running.
@@ -3247,10 +3286,10 @@ class MainActivity : AppCompatActivity() {
         }
         val windText = if (current.windKmh >= 20)
             "  \u00B7  ${current.windKmh.toInt()} km/h wind" else ""
-        weatherBanner.setBackgroundColor(
-            if (current.isPoor) 0xFF37474F.toInt()   // blue-grey: poor conditions
-            else                0xFF2E4A1E.toInt()    // dark green: good conditions
-        )
+        val bannerBg = if (current.isPoor) 0xFF37474F.toInt() else 0xFF2E4A1E.toInt()
+        weatherBanner.setBackgroundColor(bannerBg)
+        weatherRestoreBtn.setBackgroundColor(bannerBg)
+        weatherRestoreBtn.text = emoji   // keep the restore pill in sync with current conditions
         weatherBannerText.text =
             "$emoji ${current.description.replaceFirstChar { it.uppercaseChar() }}$windText"
 

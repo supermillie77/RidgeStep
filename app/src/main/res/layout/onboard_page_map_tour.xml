@@ -33,7 +33,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Nine buttons plus gestures — expand on first use, then tuck to icons"
+            android:text="Ten controls — expand on first use, then tuck to icons"
             android:textSize="12sp"
             android:textColor="@color/ob_subtitle"
             android:layout_marginTop="4dp"
@@ -109,7 +109,7 @@
                 <ImageView
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:src="@android:drawable/ic_menu_agenda"
+                    android:src="@android:drawable/ic_menu_compass"
                     android:padding="8dp"
                     android:background="@color/ob_background"
                     android:contentDescription="Hills near me"/>
@@ -122,7 +122,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Hills near me  (bottom-left)"
+                        android:text="Hills near me  (bottom-left, compass icon)"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="@color/ob_headline"/>
@@ -149,7 +149,7 @@
                 <ImageView
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:src="@android:drawable/ic_menu_agenda"
+                    android:src="@android:drawable/ic_menu_myplaces"
                     android:padding="8dp"
                     android:background="@color/ob_background"
                     android:contentDescription="My log"/>
@@ -162,7 +162,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="My log  (bottom-left)"
+                        android:text="My log  (bottom-left, star icon)"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="@color/ob_headline"/>
@@ -330,6 +330,46 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Live magnetic compass — always shows which way is north"
+                        android:textSize="11sp"
+                        android:textColor="@color/ob_subtitle"
+                        android:layout_marginTop="1dp"
+                        android:lineSpacingMultiplier="1.2"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Weather banner -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@color/ob_surface"
+                android:padding="12dp"
+                android:layout_marginBottom="2dp">
+                <TextView
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:text="&#x26C5;"
+                    android:textSize="22sp"
+                    android:gravity="center"
+                    android:background="@color/ob_background"/>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Weather banner  (top — compass-safe)"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/ob_headline"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Shows conditions after first GPS fix. Tap the weather text to open a full forecast. Dismiss with ✕ — the weather emoji stays visible at the top so you can tap to restore the banner at any time."
                         android:textSize="11sp"
                         android:textColor="@color/ob_subtitle"
                         android:layout_marginTop="1dp"
